@@ -11,78 +11,74 @@ class AutomationOrchestrator(
     private val chrono: ChronoEngine,
     private val safety: SafetyClutchEngine
 ) {
-
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private var isRunning = false
+    
+    // 🔥 THE MEMORY LOCKS (दिमाग का लॉक)
+    private var isProcessing = false
+    private var lastProcessedState: BookingState = BookingState.IDLE
 
-    // -----------------------------
-    // MAIN FLOW CONTROLLER
-    // -----------------------------
     fun startBookingFlow(rootNode: AccessibilityNodeInfo?) {
+        // 1. अगर सिस्टम बंद है, या बॉट पहले से कुछ टाइप कर रहा है, तो वापस जाओ
+        if (!AutomationCommandCenter.isRunning() || rootNode == null || isProcessing) return
 
-        if (isRunning || rootNode == null) return
+        // 2. स्क्रीन पहचानो
+        val currentState = detectCurrentScreen(rootNode)
 
-        isRunning = true
+        // 3. अगर स्क्रीन समझ नहीं आई, या इस स्क्रीन का काम पहले ही हो चुका है, तो इग्नोर करो
+        if (currentState == BookingState.IDLE || currentState == lastProcessedState) return
 
+        // 4. लॉक लगाओ और एक्शन शुरू करो
         scope.launch {
+            isProcessing = true
+            Log.d("VMAX_BRAIN", "🚀 Action Started for State: \$currentState")
 
-            Log.d("VMAX_BRAIN", "🚀 Automation Flow Started")
-
-            // STEP 1: SAFETY CHECK
-            if (safety.isSystemBusy(rootNode)) {
-                Log.d("VMAX_BRAIN", "System busy → aborting cycle")
-                isRunning = false
-                return@launch
-            }
-
-            if (safety.hasCriticalError(rootNode)) {
-                Log.e("VMAX_BRAIN", "Critical error → stopping system")
-                isRunning = false
-                return@launch
-            }
-
-            if (safety.isCaptchaVisible(rootNode)) {
-                Log.d("VMAX_BRAIN", "Captcha detected → waiting for user")
-                isRunning = false
-                return@launch
-            }
-
-            // STEP 2: TIMING SYNC
-            val now = chrono.getCurrentExactTime()
-            Log.d("VMAX_BRAIN", "Current Time: $now")
-
-            // (Future: targetTime = 10:00:00 logic here)
-
-            // STEP 3: HUMAN PAUSE
-            human.thinkingPause()
-
-            // STEP 4: FIELD DETECTION
-            val nameLabel = spatial.findNodeByText(rootNode, "Passenger Name")
-
-            if (nameLabel != null) {
-
-                val inputField = spatial.findInputNextToLabel(nameLabel)
-
-                human.humanDelay(120, 300)
-
-                if (inputField != null) {
-                    human.typeHumanLike(inputField, "MD AKBAR")
-                } else {
-                    Log.e("VMAX_BRAIN", "Input field not found")
+            // --- असली ऑटोमेशन हाइब्रिड लॉजिक ---
+            when (currentState) {
+                BookingState.PASSENGER_DETAILS -> {
+                    val nameLabel = spatial.findNodeByText(rootNode, "Passenger Name")
+                    if (nameLabel != null) {
+                        val inputField = spatial.findInputNextToLabel(nameLabel)
+                        human.humanDelay(120, 300)
+                        if (inputField != null) {
+                            // (अगले स्टेप में हम इस नाम को UI वाले डेटाबेस से जोड़ेंगे)
+                            human.typeHumanLike(inputField, "MD AKBAR")
+                        }
+                    }
+                }
+                BookingState.PAYMENT_PAGE -> {
+                    Log.d("VMAX_BRAIN", "Payment Page Detected! Striking UPI...")
+                    val upiOption = spatial.findNodeByText(rootNode, "BHIM/ UPI")
+                    if (upiOption != null) {
+                        human.performHumanClick(upiOption)
+                    }
+                }
+                else -> {
+                    Log.d("VMAX_BRAIN", "Waiting for target screen...")
                 }
             }
 
-            isRunning = false
-            Log.d("VMAX_BRAIN", "Flow Completed")
+            // 5. काम खत्म, अब मेमोरी में सेव कर लो कि यह पेज हो गया
+            lastProcessedState = currentState
+            isProcessing = false
+            Log.d("VMAX_BRAIN", "✅ Action Completed. Lock Released.")
         }
     }
 
-    // -----------------------------
-    // STOP SYSTEM SAFELY
-    // -----------------------------
+    // स्क्रीन पहचानने वाला रडार
+    private fun detectCurrentScreen(rootNode: AccessibilityNodeInfo): BookingState {
+        return when {
+            spatial.findNodeByText(rootNode, "Plan My Journey") != null -> BookingState.PLAN_JOURNEY
+            spatial.findNodeByText(rootNode, "Passenger Details") != null -> BookingState.PASSENGER_DETAILS
+            spatial.findNodeByText(rootNode, "Review Journey") != null -> BookingState.REVIEW_JOURNEY
+            spatial.findNodeByText(rootNode, "BHIM/ UPI") != null -> BookingState.PAYMENT_PAGE
+            else -> BookingState.IDLE
+        }
+    }
+
     fun stopSystem() {
-        isRunning = false
+        isProcessing = false
+        lastProcessedState = BookingState.IDLE
         scope.cancel()
-        Log.d("VMAX_BRAIN", "🛑 System Stopped")
+        Log.d("VMAX_BRAIN", "🛑 Orchestrator Stopped & Memory Cleared.")
     }
 }
