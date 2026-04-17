@@ -4,70 +4,82 @@ import android.accessibilityservice.AccessibilityService
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.util.Log
-import com.aare.vmax.core.engine.SpatialHeuristicEngine
-import com.aare.vmax.core.engine.HumanMimeticEngine
+import com.aare.vmax.core.engine.*
+import com.aare.vmax.data.repository.PassengerRepository
+import com.aare.vmax.data.datastore.ConfigStore
+import com.aare.vmax.domain.orchestrator.AutomationOrchestrator
 import kotlinx.coroutines.*
 
 class IRCTCAccessibilityService : AccessibilityService() {
 
-    private val spatialEngine = SpatialHeuristicEngine()
-    private val humanEngine = HumanMimeticEngine()
+    private val spatial = SpatialHeuristicEngine()
+    private val human = HumanMimeticEngine()
+    private val chrono = ChronoEngine()
+    private val safety = SafetyClutchEngine()
 
+    // Data layer
+    private lateinit var passengerRepo: PassengerRepository
+    private lateinit var configStore: ConfigStore
+
+    // Brain
+    private lateinit var orchestrator: AutomationOrchestrator
+
+    // Scope
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        Log.d("VMAX_LOG", "🚀 AARE-PRO vMAX Service Connected")
+
+        // init data layer
+        passengerRepo = PassengerRepository(applicationContext)
+        configStore = ConfigStore(applicationContext)
+
+        // IMPORTANT: match your existing orchestrator signature
+        orchestrator = AutomationOrchestrator(
+            spatial,
+            human,
+            chrono,
+            safety
+        )
+
+        Log.d("VMAX_LOG", "🚀 Full System Integrated: Ready to fire!")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
 
-        val rootNode = rootInActiveWindow ?: return
+        val rootNode: AccessibilityNodeInfo = rootInActiveWindow ?: return
 
-        when (event?.eventType) {
+        if (event == null) return
 
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                handleScreenChange(rootNode, event)
-            }
+        when (event.eventType) {
 
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
-                // future: live form detection
+
+                serviceScope.launch {
+                    handleScreenChange(rootNode, event)
+                }
             }
         }
     }
 
     // -----------------------------
-    // MAIN SCREEN HANDLER
+    // SCREEN HANDLER (NEW CLEAN FLOW)
     // -----------------------------
-    private fun handleScreenChange(
+    private suspend fun handleScreenChange(
         rootNode: AccessibilityNodeInfo,
         event: AccessibilityEvent
     ) {
-
-        Log.d("VMAX_LOG", "Screen Changed: ${event.packageName}")
-
-        serviceScope.launch {
-
-            humanEngine.thinkingPause()
-
-            // Example: Login button detection (safe test logic)
-            val loginNode = spatialEngine.findNodeByText(rootNode, "Login")
-
-            if (loginNode != null) {
-
-                Log.d("VMAX_LOG", "Login button detected")
-
-                humanEngine.humanDelay(120, 300)
-
-                // अभी क्लिक disabled (safe mode)
-                // humanEngine.performHumanClick(loginNode)
-            }
+        try {
+            orchestrator.startBookingFlow(rootNode)
+        } catch (e: Exception) {
+            Log.e("VMAX_LOG", "Orchestrator error: ${e.message}")
         }
     }
 
     override fun onInterrupt() {
-        Log.e("VMAX_LOG", "Service Interrupted")
         serviceScope.cancel()
+        orchestrator.stopSystem()
     }
 
     override fun onDestroy() {
