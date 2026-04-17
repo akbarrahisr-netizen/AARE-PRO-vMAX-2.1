@@ -138,9 +138,12 @@ fun ControlRoomScreen(viewModel: ControlRoomViewModel) {
         Text(text = "Status: ${state.status}", color = MaterialTheme.colorScheme.primary)
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 6. THE LAUNCHER BUTTON
+        // 6. THE LAUNCHER BUTTON (Connected to Command Center)
         Button(
             onClick = {
+                // 👉 यहाँ सिस्टम को 'ON' किया जा रहा है
+                com.aare.vmax.core.engine.AutomationCommandCenter.startSystem()
+
                 val irctcPackageName = "cris.org.in.prs.ima"
                 try {
                     val launchIntent = context.packageManager.getLaunchIntentForPackage(irctcPackageName)
@@ -157,6 +160,22 @@ fun ControlRoomScreen(viewModel: ControlRoomViewModel) {
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("🚀 START & OPEN IRCTC")
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // 7. EMERGENCY STOP BUTTON
+        Button(
+            onClick = {
+                // 👉 यहाँ सिस्टम को 'OFF' किया जा रहा है
+                com.aare.vmax.core.engine.AutomationCommandCenter.stopSystem()
+            },
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error
+            ),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("🛑 EMERGENCY STOP")
         }
     }
 }
