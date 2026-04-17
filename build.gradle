@@ -3,16 +3,15 @@ buildscript {
         google()
         mavenCentral()
     }
-
     dependencies {
         classpath "com.android.tools.build:gradle:8.2.0"
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.0"
     }
 }
 
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-    }
+// यहाँ से हमने 'allprojects' वाला झगड़ा हटा दिया है ताकि settings.gradle अपना काम कर सके।
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
 }
+
