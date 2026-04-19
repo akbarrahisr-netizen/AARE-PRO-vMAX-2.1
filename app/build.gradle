@@ -1,6 +1,7 @@
 plugins {
     id 'com.android.application' version '8.2.2'
     id 'org.jetbrains.kotlin.android' version '1.9.10'
+    id 'org.jetbrains.kotlin.plugin.serialization' version '1.9.10'
 }
 
 android {
@@ -56,4 +57,7 @@ dependencies {
 
     // DataStore
     implementation "androidx.datastore:datastore-preferences:1.0.0"
+
+    // Serialization (नया टूल जो हमने जोड़ा है)
+    implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0"
 }
