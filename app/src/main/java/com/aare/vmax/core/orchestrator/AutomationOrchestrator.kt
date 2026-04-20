@@ -1,4 +1,4 @@
-package com.aare.vmax.core.orchestrator // ✅ FIX 1: छोटा 'package'
+package com.aare.vmax.core.orchestrator
 
 import android.view.accessibility.AccessibilityNodeInfo
 import com.aare.vmax.core.event.*
@@ -20,7 +20,19 @@ class AutomationOrchestrator(
 
     fun start(config: StrikeConfig, getRoot: () -> AccessibilityNodeInfo?) {
 
-        // 1. Event Listener (stable binding)
+        // 🚀 असली हलचल: आपके सेव किए हुए 'Profile' को काम पर लगाना
+        val liveSteps = listOf(
+            RecordedStep(id = "step_1", action = ActionType.CLICK, criteria = "OK"),
+            RecordedStep(id = "step_2", action = ActionType.CLICK, criteria = "LOGIN"),
+            RecordedStep(id = "step_3", action = ActionType.CLICK, criteria = "Plan My Journey"), // या "Train"
+            // यहाँ आपका सेव किया हुआ ट्रेन नंबर (12487) खुद टाइप/सर्च होगा
+            RecordedStep(id = "step_4", action = ActionType.CLICK, criteria = config.trainNumber) 
+        )
+        
+        // बॉट के दिमाग में आपकी प्रोफाइल लोड कर दी
+        workflowEngine.loadRecording(liveSteps)
+
+        // 1. Event Listener
         eventBus.subscribe { event ->
             when (event) {
                 is AutomationEvent.ScreenChanged -> {
@@ -45,10 +57,7 @@ class AutomationOrchestrator(
     // 👁 SAFE OBSERVER LOOP
     // =========================================================
     private suspend fun observe(getRoot: () -> AccessibilityNodeInfo?) {
-
-        // ✅ FIX 2: scope.isActive कर दिया गया है
         while (scope.isActive) {
-
             val root = getRoot()
             if (root == null) {
                 delay(100)
@@ -57,61 +66,39 @@ class AutomationOrchestrator(
 
             try {
                 val hash = root.hashCode()
-
                 if (hash != lastHash) {
                     lastHash = hash
-
                     val screen = detectScreenType(root)
-
-                    // 🚫 prevent duplicate event loop
                     if (screen != lastScreen) {
                         lastScreen = screen
-
-                        eventBus.publish(
-                            AutomationEvent.ScreenChanged(screen)
-                        )
+                        eventBus.publish(AutomationEvent.ScreenChanged(screen))
                     }
                 }
-
             } catch (e: Exception) {
-                // fail-safe silent catch
+                // silent catch
             } finally {
                 root.recycle()
             }
-
             delay(80L)
         }
     }
 
     // =========================================================
-    // 🧠 SCREEN DETECTION (STABLE VERSION)
+    // 🧠 SCREEN DETECTION
     // =========================================================
     private fun detectScreenType(root: AccessibilityNodeInfo): ScreenType {
-
         val text = buildString {
             root.text?.let { append(it) }
             root.contentDescription?.let { append(it) }
         }.lowercase()
 
         return when {
-            text.contains("search") || text.contains("sort by") ->
-                ScreenType.SEARCH_RESULTS
-
-            text.contains("passenger") ->
-                ScreenType.PASSENGER_DETAILS
-
-            text.contains("payment") ->
-                ScreenType.PAYMENT
-
-            text.contains("captcha") ->
-                ScreenType.CAPTCHA
-
-            text.contains("confirm") ->
-                ScreenType.CONFIRMATION
-
-            text.contains("home") ->
-                ScreenType.HOME
-
+            text.contains("search") || text.contains("sort by") -> ScreenType.SEARCH_RESULTS
+            text.contains("passenger") -> ScreenType.PASSENGER_DETAILS
+            text.contains("payment") -> ScreenType.PAYMENT
+            text.contains("captcha") -> ScreenType.CAPTCHA
+            text.contains("confirm") -> ScreenType.CONFIRMATION
+            text.contains("home") -> ScreenType.HOME
             else -> ScreenType.UNKNOWN
         }
     }
