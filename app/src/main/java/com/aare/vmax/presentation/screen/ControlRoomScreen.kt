@@ -125,7 +125,7 @@ fun ControlRoomScreen(viewModel: ControlRoomViewModel) {
                     gender = gender,
                     berth = berth,
                     trainNo = trainNo,
-                    selectedClass = bookingClass
+                    bookingClass = bookingClass // 👈 यहाँ मैंने इसे सही कर दिया है!
                 )
             },
             modifier = Modifier.fillMaxWidth()
