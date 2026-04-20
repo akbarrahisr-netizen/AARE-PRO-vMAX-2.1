@@ -1,4 +1,4 @@
-package com.aare.vmax.core.orchestrator
+package com.aare.vmax.core.orchestrator // ✅ FIX 1: छोटा 'package'
 
 import android.view.accessibility.AccessibilityNodeInfo
 import com.aare.vmax.core.event.*
@@ -20,12 +20,16 @@ class AutomationOrchestrator(
 
     fun start(config: StrikeConfig, getRoot: () -> AccessibilityNodeInfo?) {
 
-        // 1. Event Listener
+        // 1. Event Listener (stable binding)
         eventBus.subscribe { event ->
             when (event) {
                 is AutomationEvent.ScreenChanged -> {
-                    // ✅ FIX 1: यहाँ नाम सही कर दिया गया है
-                    workflowEngine.onScreenChange(event.screenType)
+                    scope.launch {
+                        val root = getRoot()
+                        if (root != null) {
+                            workflowEngine.onScreenChanged(root)
+                        }
+                    }
                 }
                 else -> {}
             }
@@ -38,12 +42,12 @@ class AutomationOrchestrator(
     }
 
     // =========================================================
-    // 👁 SCREEN OBSERVER (SAFE VERSION)
+    // 👁 SAFE OBSERVER LOOP
     // =========================================================
-    // ✅ FIX 2: यहाँ 'CoroutineScope.' जोड़ दिया गया है ताकि isActive का एरर न आए
-    private suspend fun CoroutineScope.observe(getRoot: () -> AccessibilityNodeInfo?) {
+    private suspend fun observe(getRoot: () -> AccessibilityNodeInfo?) {
 
-        while (isActive) {
+        // ✅ FIX 2: scope.isActive कर दिया गया है
+        while (scope.isActive) {
 
             val root = getRoot()
             if (root == null) {
@@ -62,6 +66,7 @@ class AutomationOrchestrator(
                     // 🚫 prevent duplicate event loop
                     if (screen != lastScreen) {
                         lastScreen = screen
+
                         eventBus.publish(
                             AutomationEvent.ScreenChanged(screen)
                         )
@@ -69,7 +74,7 @@ class AutomationOrchestrator(
                 }
 
             } catch (e: Exception) {
-                // silent fail safe
+                // fail-safe silent catch
             } finally {
                 root.recycle()
             }
@@ -79,7 +84,7 @@ class AutomationOrchestrator(
     }
 
     // =========================================================
-    // 🧠 SCREEN DETECTION (IMPROVED)
+    // 🧠 SCREEN DETECTION (STABLE VERSION)
     // =========================================================
     private fun detectScreenType(root: AccessibilityNodeInfo): ScreenType {
 
@@ -103,6 +108,9 @@ class AutomationOrchestrator(
 
             text.contains("confirm") ->
                 ScreenType.CONFIRMATION
+
+            text.contains("home") ->
+                ScreenType.HOME
 
             else -> ScreenType.UNKNOWN
         }
