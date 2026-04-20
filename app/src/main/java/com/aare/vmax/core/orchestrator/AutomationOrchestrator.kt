@@ -24,9 +24,8 @@ class AutomationOrchestrator(
         eventBus.subscribe { event ->
             when (event) {
                 is AutomationEvent.ScreenChanged -> {
-                    scope.launch {
-                        workflowEngine.onScreenChanged(getRoot())
-                    }
+                    // ✅ FIX 1: यहाँ नाम सही कर दिया गया है
+                    workflowEngine.onScreenChange(event.screenType)
                 }
                 else -> {}
             }
@@ -41,7 +40,8 @@ class AutomationOrchestrator(
     // =========================================================
     // 👁 SCREEN OBSERVER (SAFE VERSION)
     // =========================================================
-    private suspend fun observe(getRoot: () -> AccessibilityNodeInfo?) {
+    // ✅ FIX 2: यहाँ 'CoroutineScope.' जोड़ दिया गया है ताकि isActive का एरर न आए
+    private suspend fun CoroutineScope.observe(getRoot: () -> AccessibilityNodeInfo?) {
 
         while (isActive) {
 
