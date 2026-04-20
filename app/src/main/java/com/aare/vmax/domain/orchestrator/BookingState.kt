@@ -1,13 +1,32 @@
 package com.aare.vmax.domain.orchestrator
 
-// यह आपके बॉट को बताएगा कि बुकिंग किस स्टेज पर है
+// 🔥 Booking flow control (State Machine)
 enum class BookingState {
+
     IDLE,
-    INITIALIZING,
-    LOGIN,
-    TRAIN_SEARCH,
-    PASSENGER_ENTRY,
-    PAYMENT,
+    LOGIN_REQUIRED,
+    PLAN_JOURNEY,
+    REVIEW_JOURNEY,
+    PASSENGER_DETAILS,
+    PAYMENT_PAGE,
     COMPLETED,
-    FAILED
+    FAILED;
+
+    // ✅ Check if process finished
+    fun isFinalState(): Boolean {
+        return this == COMPLETED || this == FAILED
+    }
+
+    // ✅ Next logical state (basic flow)
+    fun next(): BookingState {
+        return when (this) {
+            IDLE -> LOGIN_REQUIRED
+            LOGIN_REQUIRED -> PLAN_JOURNEY
+            PLAN_JOURNEY -> REVIEW_JOURNEY
+            REVIEW_JOURNEY -> PASSENGER_DETAILS
+            PASSENGER_DETAILS -> PAYMENT_PAGE
+            PAYMENT_PAGE -> COMPLETED
+            COMPLETED, FAILED -> this
+        }
+    }
 }
