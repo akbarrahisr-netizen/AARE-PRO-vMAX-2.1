@@ -1,19 +1,12 @@
 package com.aare.vmax.core.orchestrator
 
-// 🛠️ इन इम्पोर्ट्स के बिना "Unresolved Reference" वाले 50 एरर आएंगे
 import android.view.accessibility.AccessibilityNodeInfo
-import android.util.Log
 import com.aare.vmax.core.event.*
 import com.aare.vmax.core.models.*
-import com.aare.vmax.core.finder.NodeFinder
 import com.aare.vmax.core.executor.ActionExecutor
-import com.aare.vmax.core.utils.detectScreenType // यह हेल्पर फंक्शन ज़रूरी है
+import com.aare.vmax.core.finder.NodeFinder
 import kotlinx.coroutines.*
 
-/**
- * ✅ AutomationOrchestrator: यह बॉट का 'कप्तान' है।
- * इसका काम स्क्रीन को देखना और सही समय पर इवेंट्स फायर करना है।
- */
 class AutomationOrchestrator(
     private val eventBus: AutomationEventBus,
     private val workflowEngine: WorkflowEngine,
@@ -23,71 +16,95 @@ class AutomationOrchestrator(
 ) {
 
     private var lastHash = 0
+    private var lastScreen: ScreenType = ScreenType.UNKNOWN
 
     fun start(config: StrikeConfig, getRoot: () -> AccessibilityNodeInfo?) {
 
-        // 🎯 इवेंट हैंडलर्स: जब कुछ होगा, तो यहाँ से कमांड जाएगी
+        // 1. Event Listener
         eventBus.subscribe { event ->
             when (event) {
                 is AutomationEvent.ScreenChanged -> {
-                    workflowEngine.onScreenChange(event.screenType)
+                    scope.launch {
+                        workflowEngine.onScreenChanged(getRoot())
+                    }
                 }
-
-                is AutomationEvent.NodeFound -> {
-                    // actionExecutor.execute(event.nodeId) // अगर आपका शूटर तैयार है
-                }
-
-                is AutomationEvent.ErrorOccurred -> {
-                    // if (event.recoverable) workflowEngine.retry()
-                    // else eventBus.publish(AutomationEvent.UserInterventionRequired)
-                }
-
                 else -> {}
             }
         }
 
-        // 📡 स्क्रीन पर नज़र रखने वाला 'जासूस' (Observer)
+        // 2. Observer loop
         scope.launch(Dispatchers.Default) {
             observe(getRoot)
         }
     }
 
     // =========================================================
-    // ✅ SAFE OBSERVER (मेमोरी लीक और क्रैश से बचाव)
+    // 👁 SCREEN OBSERVER (SAFE VERSION)
     // =========================================================
     private suspend fun observe(getRoot: () -> AccessibilityNodeInfo?) {
 
         while (isActive) {
-            val root = getRoot() ?: run {
+
+            val root = getRoot()
+            if (root == null) {
                 delay(100)
-                return@run null
-            } ?: continue
+                continue
+            }
 
             try {
-                // 🛠️ स्ट्रक्चरल हैश: यह चेक करता है कि स्क्रीन बदली या नहीं
-                val hash = root.hashCode() 
+                val hash = root.hashCode()
 
                 if (hash != lastHash) {
                     lastHash = hash
 
                     val screen = detectScreenType(root)
-                    
-                    eventBus.publish(
-                        AutomationEvent.ScreenChanged(screen)
-                    )
-                    
-                    Log.d("VMAX_ORCH", "🎯 Screen Detected: $screen")
+
+                    // 🚫 prevent duplicate event loop
+                    if (screen != lastScreen) {
+                        lastScreen = screen
+                        eventBus.publish(
+                            AutomationEvent.ScreenChanged(screen)
+                        )
+                    }
                 }
 
             } catch (e: Exception) {
-                Log.e("VMAX_ORCH", "❌ Observation Error: ${e.message}")
+                // silent fail safe
             } finally {
-                // ♻️ ज़रूरी: नोड को रीसायकल करना ताकि फोन लैग न करे
                 root.recycle()
             }
 
-            delay(80L) // 80ms का गैप (Performance के लिए बेस्ट)
+            delay(80L)
+        }
+    }
+
+    // =========================================================
+    // 🧠 SCREEN DETECTION (IMPROVED)
+    // =========================================================
+    private fun detectScreenType(root: AccessibilityNodeInfo): ScreenType {
+
+        val text = buildString {
+            root.text?.let { append(it) }
+            root.contentDescription?.let { append(it) }
+        }.lowercase()
+
+        return when {
+            text.contains("search") || text.contains("sort by") ->
+                ScreenType.SEARCH_RESULTS
+
+            text.contains("passenger") ->
+                ScreenType.PASSENGER_DETAILS
+
+            text.contains("payment") ->
+                ScreenType.PAYMENT
+
+            text.contains("captcha") ->
+                ScreenType.CAPTCHA
+
+            text.contains("confirm") ->
+                ScreenType.CONFIRMATION
+
+            else -> ScreenType.UNKNOWN
         }
     }
 }
-
