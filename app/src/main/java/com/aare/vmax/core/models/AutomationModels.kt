@@ -1,4 +1,4 @@
-package com.aare.vmax.core.models
+package com.aare.vmax.core.models // ✅ मैंने 'Package' की जगह छोटा 'package' कर दिया है
 
 // =========================================================
 // 🖥 SCREEN MODEL
@@ -71,4 +71,18 @@ data class StrikeConfig(
     val passengerName: String,
     val bookingClass: String = "SL",
     val isTatkal: Boolean = true
+)
+
+// =========================================================
+// 🚀 MISSING MODELS (ये दोनों मैंने नीचे जोड़ दिए हैं)
+// =========================================================
+enum class ActionPriority {
+    LOW, MEDIUM, HIGH, CRITICAL
+}
+
+data class RecordedStep(
+    val id: String,
+    val action: ActionType,
+    val criteria: String,
+    val maxRetries: Int = 3
 )
