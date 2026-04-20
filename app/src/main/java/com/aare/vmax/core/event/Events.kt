@@ -4,6 +4,11 @@ import android.util.Log
 import kotlinx.coroutines.*
 import java.util.concurrent.CopyOnWriteArrayList
 
+// 👇 Models imports (IMPORTANT FIX)
+import com.aare.vmax.core.models.ScreenType
+import com.aare.vmax.core.models.ActionType
+import com.aare.vmax.core.models.AutomationError
+
 // =========================================================
 // ✅ EVENTS
 // =========================================================
@@ -32,11 +37,12 @@ sealed class AutomationEvent {
 }
 
 // =========================================================
-// ✅ THREAD-SAFE EVENT BUS (FIXED)
+// ✅ THREAD-SAFE EVENT BUS
 // =========================================================
 class AutomationEventBus {
 
     private val subscribers = CopyOnWriteArrayList<(AutomationEvent) -> Unit>()
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     fun subscribe(handler: (AutomationEvent) -> Unit) {
         subscribers.add(handler)
@@ -48,10 +54,12 @@ class AutomationEventBus {
 
     fun publish(event: AutomationEvent) {
         for (handler in subscribers) {
-            try {
-                handler(event)
-            } catch (e: Exception) {
-                Log.e("EventBus", "Handler crash: ${e.message}")
+            scope.launch {
+                try {
+                    handler(event)
+                } catch (e: Exception) {
+                    Log.e("EventBus", "Handler crash: ${e.message}")
+                }
             }
         }
     }
