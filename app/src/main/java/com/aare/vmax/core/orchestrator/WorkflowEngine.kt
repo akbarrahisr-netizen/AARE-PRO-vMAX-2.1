@@ -1,14 +1,15 @@
-package com.aare.vmax.core.orchestrator
+package com.aare.vmax.core.orchestrator // ✅ FIX 1: छोटा 'package'
 
 import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
 import com.aare.vmax.core.executor.ActionExecutor
-import com.aare.vmax.core.executor.ActionPriority
+import com.aare.vmax.core.models.ActionPriority // ✅ FIX 2: सही Import
 import com.aare.vmax.core.finder.NodeFinder
 import com.aare.vmax.core.models.RecordedStep
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.delay
 
 class WorkflowEngine(
     private val finder: NodeFinder,
@@ -27,14 +28,13 @@ class WorkflowEngine(
     }
 
     // =========================================================
-    // 🎯 MAIN EXECUTION ENTRY
+    // 🎯 MAIN EXECUTION
     // =========================================================
     suspend fun onScreenChanged(root: AccessibilityNodeInfo?) {
         if (root == null) return
 
         val step: RecordedStep?
 
-        // 🔒 lock only state access (NOT execution)
         mutex.withLock {
             if (currentStepIndex >= recording.size) return
             step = recording[currentStepIndex]
@@ -59,7 +59,7 @@ class WorkflowEngine(
     }
 
     // =========================================================
-    // ⚙️ STEP EXECUTION LOGIC
+    // ⚙️ STEP EXECUTION (SAFE NATIVE SEARCH)
     // =========================================================
     private suspend fun executeStep(
         root: AccessibilityNodeInfo,
@@ -71,10 +71,17 @@ class WorkflowEngine(
 
         while (attempts < maxAttempts) {
 
+            // ✅ FIX 3: Native Search (इससे Type Mismatch नहीं होगा)
             val node = try {
-                finder.findBySmartMatch(root, step.criteria)
+                val texts = root.findAccessibilityNodeInfosByText(step.criteria)
+                if (!texts.isNullOrEmpty()) {
+                    texts[0]
+                } else {
+                    val ids = root.findAccessibilityNodeInfosByViewId(step.criteria)
+                    if (!ids.isNullOrEmpty()) ids[0] else null
+                }
             } catch (e: Exception) {
-                Log.e("VMAX_FLOW", "Finder error: ${e.message}")
+                Log.e("VMAX_FLOW", "Search error: ${e.message}")
                 null
             }
 
@@ -87,6 +94,7 @@ class WorkflowEngine(
             }
 
             attempts++
+            delay(100)
         }
 
         return false
