@@ -1,11 +1,12 @@
 package com.aare.vmax.core.orchestrator
 
-// ✅ ज़रूरी Imports (इनके बिना एरर आता है)
 import android.view.accessibility.AccessibilityNodeInfo
+import com.aare.vmax.core.event.AutomationEventBus
 import com.aare.vmax.core.models.*
 import com.aare.vmax.core.executor.ActionExecutor
 import com.aare.vmax.core.finder.NodeFinder
-import com.aare.vmax.core.event.*
+// import com.aare.vmax.core.engine.WorkflowEngine // इसे हटा दिया है क्योंकि यह Orchestrator के ही फोल्डर में है
+
 import kotlinx.coroutines.*
 
 class AutomationOrchestrator(
@@ -16,7 +17,6 @@ class AutomationOrchestrator(
     private val scope: CoroutineScope
 ) {
 
-    private var lastHash = 0
     private var lastScreen: ScreenType = ScreenType.UNKNOWN
 
     fun start(config: StrikeConfig, getRoot: () -> AccessibilityNodeInfo?) {
@@ -26,46 +26,75 @@ class AutomationOrchestrator(
                 id = "step_select_class",
                 action = ActionType.CLICK,
                 criteria = config.bookingClass,
-                maxRetries = 2
+                maxRetries = 3 // 🔥 Excellent: Reliability बढ़ेगी
             ),
             RecordedStep(
                 id = "step_book_now",
                 action = ActionType.CLICK,
-                criteria = "Passenger Details",
-                maxRetries = 2
+                criteria = "Passenger",
+                maxRetries = 3
             )
         )
 
         workflowEngine.loadRecording(liveSteps)
 
-        // ✅ Observer loop
         scope.launch(Dispatchers.Default) {
             while (isActive) {
+
                 val root = getRoot()
-                if (root != null) {
-                    try {
-                        val screen = detectScreenType(root)
-                        if (screen == ScreenType.SEARCH_RESULTS) {
-                            workflowEngine.onScreenChanged(root)
-                        }
-                    } catch (e: Exception) {
-                        // silent
-                    } finally {
-                        root.recycle()
-                    }
+                if (root == null) {
+                    delay(200)
+                    continue
                 }
-                delay(200L)
+
+                try {
+                    val screen = detectScreenType(root)
+
+                    // स्क्रीन state अपडेट
+                    if (screen != lastScreen) {
+                        lastScreen = screen
+                    }
+
+                    // 🔥 HUNTER MODE
+                    if (screen == ScreenType.SEARCH_RESULTS) {
+                        
+                        // सीधा इंजन को फायर करो
+                        workflowEngine.onScreenChanged(root)
+                        
+                        // ✅ Smart Delay: क्लिक के बाद स्क्रीन को सॉर्ट होने का टाइम मिलेगा
+                        delay(300) 
+                    }
+
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                } finally {
+                    root.recycle()
+                }
+
+                delay(200) // 🎯 scan frequency
             }
         }
     }
 
-    // ✅ यह फंक्शन भी फाइल में होना ज़रूरी है
     private fun detectScreenType(root: AccessibilityNodeInfo): ScreenType {
-        val text = root.toString().lowercase()
+
+        val text = buildString {
+            root.text?.let { append(it) }
+            root.contentDescription?.let { append(it) }
+        }.lowercase()
+
         return when {
-            text.contains("sort by") || text.contains("quota") -> ScreenType.SEARCH_RESULTS
-            text.contains("passenger") -> ScreenType.PASSENGER_DETAILS
+            text.contains("search") || text.contains("sort by") || text.contains("quota") ->
+                ScreenType.SEARCH_RESULTS
+
+            text.contains("passenger") ->
+                ScreenType.PASSENGER_DETAILS
+
+            text.contains("payment") ->
+                ScreenType.PAYMENT
+
             else -> ScreenType.UNKNOWN
         }
     }
 }
+
