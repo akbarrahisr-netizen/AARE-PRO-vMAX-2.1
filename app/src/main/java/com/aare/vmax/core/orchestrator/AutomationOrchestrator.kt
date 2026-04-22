@@ -2,94 +2,101 @@ package com.aare.vmax.core.orchestrator
 
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
-import com.aare.vmax.core.models.ActionType
-import com.aare.vmax.core.models.RecordedStep
-import com.aare.vmax.core.models.SelectorType
-import com.aare.vmax.core.models.VerificationStrategy
+import com.aare.vmax.core.models.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 
+/**
+ * 🔥 AUTOMATION ORCHESTRATOR V3 (CLEAN COPY-PASTE VERSION)
+ */
 data class StrikeConfig(
     val trainNumber: String,
     val bookingClass: String
 )
 
-/**
- * 🔥 AUTOMATION ORCHESTRATOR V3
- * Unified Event Pipeline + Compatible with V26 Engine
- */
 class AutomationOrchestrator(
     private val workflowEngine: WorkflowEngine,
     private val scope: CoroutineScope
 ) {
-    private val eventFlow = MutableSharedFlow<AccessibilityEvent>(
+
+    val eventFlow = MutableSharedFlow<AccessibilityEvent>(
         extraBufferCapacity = 50,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
 
-    private var executionJob: Job? = null
+    private var job: Job? = null
 
+    /**
+     * 🚀 START AUTOMATION
+     */
     fun start(config: StrikeConfig) {
-        executionJob?.cancel()
 
-        executionJob = scope.launch {
+        job?.cancel()
+
+        job = scope.launch {
+
             try {
-                Log.d("ORCHESTRATOR", "🚀 Starting strike for ${config.trainNumber} - ${config.bookingClass}")
-                
-                val liveSteps = buildSteps(config)
-                workflowEngine.loadRecording(liveSteps)                
+                Log.d("ORCHESTRATOR", "🚀 START ${config.trainNumber} - ${config.bookingClass}")
+
+                val steps = buildSteps(config)
+
+                workflowEngine.loadRecording(steps)
                 workflowEngine.startReactiveListening(eventFlow)
-                
-                // ✅ V26 Engine Compatible Execution Loop
+
+                // 🔁 Execution loop (engine-driven)
                 while (isActive) {
+
                     val success = workflowEngine.onScreenChanged()
+
                     if (success) {
-                        // Engine will internally advance to the next step.
-                        delay(100) 
+                        delay(100)
                     } else {
-                        Log.e("ORCHESTRATOR", "🛑 Workflow stopped or exhausted all retries.")
+                        Log.e("ORCHESTRATOR", "🛑 STOPPED / FAILED")
                         break
                     }
                 }
-                
+
             } catch (e: CancellationException) {
-                Log.d("ORCHESTRATOR", "⚠️ Strike cancelled")
+                Log.d("ORCHESTRATOR", "⚠️ CANCELLED")
+
             } catch (e: Exception) {
-                Log.e("ORCHESTRATOR", "💥 Orchestrator error", e)
+                Log.e("ORCHESTRATOR", "💥 ERROR", e)
             }
         }
     }
 
+    /**
+     * 📡 RECEIVE ACCESSIBILITY EVENTS
+     */
     fun onAccessibilityEvent(event: AccessibilityEvent) {
         eventFlow.tryEmit(event)
     }
 
+    /**
+     * 🧠 BUILD EXECUTION STEPS
+     */
     private fun buildSteps(config: StrikeConfig): List<RecordedStep> {
         return listOf(
-            // Step 1: Select Class
+
             RecordedStep(
                 id = "step_select_class",
                 actionType = ActionType.CLICK,
-                criteria = config.trainNumber, 
-                targetClass = config.bookingClass, 
-                fallbackCriteria = listOf(config.bookingClass to SelectorType.TEXT), // ✅ Fixed type mismatch
+                criteria = config.trainNumber,
+                targetClass = config.bookingClass,
+                fallbackCriteria = listOf(config.bookingClass to SelectorType.TEXT), // ✅ FIXED
                 maxRetries = 15,
                 postActionDelayMs = 300L,
-                verificationStrategy = VerificationStrategy.ScreenChanged(minHashDiff = 100L),
+                verificationStrategy = VerificationStrategy.ScreenChanged(100L),
                 isCritical = true
             ),
 
-            // Step 2: Click 'Book Now'
             RecordedStep(
                 id = "step_book_now",
                 actionType = ActionType.CLICK,
                 criteria = "Book Now",
-                targetId = "btn_book_now", 
-                fallbackCriteria = listOf(
-                    "BOOK NOW" to SelectorType.TEXT, 
-                    "Book" to SelectorType.TEXT
-                ), // ✅ Fixed type mismatch
+                targetId = "btn_book_now",
+                fallbackCriteria = listOf("BOOK NOW" to SelectorType.TEXT, "Book" to SelectorType.TEXT), // ✅ FIXED
                 maxRetries = 10,
                 postActionDelayMs = 500L,
                 verificationStrategy = VerificationStrategy.NodeExists(
@@ -99,11 +106,10 @@ class AutomationOrchestrator(
                 isCritical = true
             ),
 
-            // Step 3: Wait for Passenger Screen
             RecordedStep(
                 id = "step_wait_passenger",
                 actionType = ActionType.WAIT,
-                criteria = "", 
+                criteria = "",
                 postActionDelayMs = 1000L,
                 verificationStrategy = VerificationStrategy.NodeExists(
                     selector = "Passenger Name",
@@ -113,19 +119,28 @@ class AutomationOrchestrator(
         )
     }
 
+    /**
+     * 🔄 RESET ENGINE
+     */
     fun reset() {
-        executionJob?.cancel()
-        // ✅ Fixed: reset() is a suspend function in V26
-        scope.launch { 
-            workflowEngine.reset() 
+        job?.cancel()
+        job = null
+
+        scope.launch {
+            workflowEngine.reset()
         }
-        Log.d("ORCHESTRATOR", "🔄 Orchestrator reset")
+
+        Log.d("ORCHESTRATOR", "🔄 RESET DONE")
     }
 
+    /**
+     * 🔌 SHUTDOWN
+     */
     fun shutdown() {
-        executionJob?.cancel()
+        job?.cancel()
         workflowEngine.shutdown()
         scope.cancel()
-        Log.d("ORCHESTRATOR", "🔌 Orchestrator shutdown")
+
+        Log.d("ORCHESTRATOR", "🔌 SHUTDOWN")
     }
 }
