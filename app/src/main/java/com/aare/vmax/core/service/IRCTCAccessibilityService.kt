@@ -1,79 +1,93 @@
 package com.aare.vmax.core.service
 
 import android.accessibilityservice.AccessibilityService
-import android.view.accessibility.AccessibilityEvent
+import android.accessibilityservice.GestureDescription
+import android.graphics.Path
+import android.os.Handler
+import android.provider.Settings
 import android.util.Log
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
+import android.view.accessibility.AccessibilityEvent
+import com.aare.vmax.core.orchestrator.*
+import com.aare.vmax.ui.FloatingPanelManager
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableSharedFlow
 
-class VMaxAccessibilityService : AccessibilityService() {
+class VMaxAccessibilityService : AccessibilityService(), GestureDispatcher {
 
-    // आपके वेरिएबल्स जिन्हें क्लास के अंदर रखना ज़रूरी था
-    private var passengerRepo: Any? = null
-    private var configStore: Any? = null
-    private var orchestrator: Any? = null
-    private var job: Job? = null
+    private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob() + CoroutineName("VMaxService"))
+    
+    private lateinit var engine: WorkflowEngine
+    private lateinit var orchestrator: AutomationOrchestrator
+    private lateinit var panelManager: FloatingPanelManager
+    private val eventFlow = MutableSharedFlow<AccessibilityEvent>(extraBufferCapacity = 20)
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        Log.d("VMAX_SERVICE", "🔌 Service connected")
 
-        // ==========================================
-        // 1. DATA LAYER INIT
-        // ==========================================
-        // (जब आपकी PassengerRepository बन जाए, तब // हटा दें)
-        // passengerRepo = PassengerRepository(applicationContext)
-        // configStore = ConfigStore(applicationContext)
+        engine = WorkflowEngine(
+            getRoot = { rootInActiveWindow },
+            gestureDispatcher = this,
+            config = EngineConfig(expectedPackageName = "in.irctc", minScrollChangeThreshold = 50L),
+            engineScope = serviceScope
+        )
 
-        // ==========================================
-        // 2. ORCHESTRATOR INIT
-        // ==========================================
-        // (जब AutomationOrchestrator फाइल बन जाए, तब इसे चालू करें)
-        /*
         orchestrator = AutomationOrchestrator(
-            spatial = spatial,
-            human = human,
-            chrono = chrono,
-            safety = safety,
-            passengerRepo = passengerRepo
-        )
-        */
-
-        Log.d(
-            "VMAX_LOG",
-            "🚀 Full Pipeline Connected: UI -> VM -> Orchestrator -> Service"
+            eventBus = AutomationEventBus(),
+            workflowEngine = engine,
+            nodeFinder = NodeFinder(),
+            actionExecutor = ActionExecutor(this),
+            scope = serviceScope
         )
 
-        // ==========================================
-        // 3. COMMAND CENTER LISTENER
-        // ==========================================
-        // (जब AutomationCommandCenter बन जाए, तब इसे चालू करें)
-        /*
-        job = CoroutineScope(Dispatchers.Main + SupervisorJob()).launch {
-            AutomationCommandCenter.isSystemActive.collect { active ->
-                if (!active) {
-                    // orchestrator?.stopSystem()
-                    return@collect
-                }
+        panelManager = FloatingPanelManager(
+            context = this,
+            engine = engine,
+            orchestrator = orchestrator,
+            uiScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+        )
 
-                val root = rootInActiveWindow
-                if (root != null) {
-                    // orchestrator?.startBookingFlow(root)
+        if (Settings.canDrawOverlays(this)) {
+            panelManager.show()
+        }
+
+        engine.startReactiveListening(eventFlow)
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        try {
+            event?.let {
+                engine.notifyEvent(it)
+                eventFlow.tryEmit(it)
+                if (::orchestrator.isInitialized) {
+                    orchestrator.onAccessibilityEvent(it) // 🔥 Fix #1
                 }
             }
+        } catch (e: Exception) {
+            Log.e("VMAX_SERVICE", "💥 Event error: ${e.message}", e)
         }
-        */
     }
 
-    // यह फंक्शन स्क्रीन पर होने वाली हर हरकत को पकड़ता है (इसे होना ज़रूरी है)
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // फिलहाल यह खाली रहेगा
-    }
-
-    // जब आप फोन की सेटिंग से सर्विस बंद करेंगे, तो यह बैकग्राउंड काम को रोक देगा
     override fun onInterrupt() {
-        job?.cancel()
+        Log.d("VMAX_SERVICE", "⚠️ Service interrupted")
+    }
+
+    override fun onDestroy() {
+        Log.d("VMAX_SERVICE", "🔌 Service destroying")
+        
+        if (::panelManager.isInitialized) panelManager.remove()
+        if (::engine.isInitialized) engine.shutdown()
+        if (::orchestrator.isInitialized) orchestrator.shutdown() // 🔥 Fix #2
+        
+        serviceScope.cancel()
+        super.onDestroy()
+    }
+
+    override fun dispatchGesture(
+        gesture: GestureDescription,
+        callback: AccessibilityService.GestureResultCallback?,
+        handler: Handler?
+    ): Boolean {
+        return super.dispatchGesture(gesture, callback, handler) // ✅ Crash fix
     }
 }
