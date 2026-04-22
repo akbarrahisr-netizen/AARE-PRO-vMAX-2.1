@@ -11,9 +11,11 @@ import com.aare.vmax.core.models.RecordedStep
 import com.aare.vmax.core.models.SelectorType
 import com.aare.vmax.core.models.VerificationStrategy
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.atomic.AtomicReference
@@ -194,7 +196,8 @@ class WorkflowEngine(
     suspend fun loadRecording(list: List<RecordedStep>) = executionMutex.withLock {
         steps.clear()
         steps.addAll(list)
-        currentIndex = 0        lastValidEventTime = 0L
+        currentIndex = 0        
+        lastValidEventTime = 0L
         backoffScheduler.reset()
         memory.reset()
         causalContext.set(null)
@@ -243,7 +246,8 @@ class WorkflowEngine(
         val rootHandle = NodeHandle.wrap(safeRoot())
         val preFingerprint = rootHandle.use { buildFingerprint(it) } ?: return false
         
-        val actionId = "${step.id}_${System.nanoTime()}"        causalContext.set(CausalContext(actionId, preFingerprint, System.currentTimeMillis()))
+        val actionId = "${step.id}_${System.nanoTime()}"        
+        causalContext.set(CausalContext(actionId, preFingerprint, System.currentTimeMillis()))
         
         memory.lastActionId = actionId
         memory.lastFingerprint = preFingerprint
@@ -292,7 +296,8 @@ class WorkflowEngine(
                 
             } catch (e: Exception) {
                 Log.e("VMAX_FLOW", "💥 ${e.message}", e)
-                attempts++                delay(backoffScheduler.nextDelay())
+                attempts++                
+                delay(backoffScheduler.nextDelay())
             }
         }
         Log.e("VMAX_FLOW", "❌ Step[${step.id}] failed after $attempts attempts")
@@ -390,7 +395,8 @@ class WorkflowEngine(
             val cy = rect.centerY().toFloat()
             val swipeLength = rect.height() * 0.6f
 
-            val path = Path().apply {                moveTo(cx, cy + swipeLength / 2)
+            val path = Path().apply {                
+                moveTo(cx, cy + swipeLength / 2)
                 lineTo(cx, cy - swipeLength / 2)
             }
 
@@ -439,7 +445,8 @@ class WorkflowEngine(
                 child.recycle()
             }
         }
-        return null    }
+        return null    
+    }
 
     // =========================================================
     // 🔥 GESTURE ACK PIPELINE
@@ -537,7 +544,8 @@ class WorkflowEngine(
     }
     
     private fun isCausalEvent(event: AccessibilityEvent, before: CausalFingerprint, after: CausalFingerprint): Boolean {
-        val nodeDelta = abs(after.nodeCount - before.nodeCount)        val textDelta = after.textHash != before.textHash
+        val nodeDelta = abs(after.nodeCount - before.nodeCount)        
+        val textDelta = after.textHash != before.textHash
         val structureDelta = after.structureHash != before.structureHash
 
         return event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
@@ -586,7 +594,8 @@ class WorkflowEngine(
     }
 
     private fun findNode(root: AccessibilityNodeInfo, text: String): AccessibilityNodeInfo? {
-        val nodes = root.findAccessibilityNodeInfosByText(text)        val target = nodes?.firstOrNull { it.isVisibleToUser && (it.isClickable || it.isClickableOrHasClickableChild()) }
+        val nodes = root.findAccessibilityNodeInfosByText(text)        
+        val target = nodes?.firstOrNull { it.isVisibleToUser && (it.isClickable || it.isClickableOrHasClickableChild()) }
         nodes?.filter { it != target }?.forEach { it.recycle() }
         return target
     }
@@ -635,7 +644,8 @@ class WorkflowEngine(
                 
                 if (current.isVisibleToUser) {
                     for (i in 0 until current.childCount) {
-                        current.getChild(i)?.let { queue.addLast(it) }                    }
+                        current.getChild(i)?.let { queue.addLast(it) }                    
+                    }
                     return current
                 } else {
                     current.recycle()
