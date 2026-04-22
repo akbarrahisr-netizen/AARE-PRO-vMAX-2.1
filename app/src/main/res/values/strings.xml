@@ -1,5 +1,4 @@
 <resources>
-    <string name="app_name">AARE-PRO vMAX</string>
-    <string name="service_description">AARE-PRO vMAX 2.1: Human-Mimetic Tatkal Assistant</string>
-    <string name="accessibility_service_name">AARE-PRO vMAX Service</string>
+    <string name="app_name">VMax Pro</string>
+    <string name="accessibility_service_description">VMax Pro Automation Service</string>
 </resources>
