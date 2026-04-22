@@ -1,16 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.aare.vmax">
 
-    <!-- 🔥 Overlay Permission -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    
-    <!-- 🔥 Accessibility Service -->
     <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" />
 
-    <application ... >
-        
-        <!-- MainActivity -->
-        <activity android:name=".MainActivity"
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="VMax Pro"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+
+        <activity 
+            android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -18,9 +22,8 @@
             </intent-filter>
         </activity>
 
-        <!-- 🔥 Accessibility Service Declaration -->
         <service
-            android:name=".service.VMaxAccessibilityService"
+            android:name=".core.service.VMaxAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
             <intent-filter>
@@ -32,4 +35,5 @@
         </service>
 
     </application>
+
 </manifest>
