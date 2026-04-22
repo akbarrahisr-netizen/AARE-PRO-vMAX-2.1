@@ -1,100 +1,131 @@
 package com.aare.vmax.core.orchestrator
 
-import android.view.accessibility.AccessibilityNodeInfo
-import com.aare.vmax.core.event.AutomationEventBus
-import com.aare.vmax.core.models.*
-import com.aare.vmax.core.executor.ActionExecutor
-import com.aare.vmax.core.finder.NodeFinder
-// import com.aare.vmax.core.engine.WorkflowEngine // इसे हटा दिया है क्योंकि यह Orchestrator के ही फोल्डर में है
-
+import android.util.Log
+import android.view.accessibility.AccessibilityEvent
+import com.aare.vmax.core.models.ActionType
+import com.aare.vmax.core.models.RecordedStep
+import com.aare.vmax.core.models.SelectorType
+import com.aare.vmax.core.models.VerificationStrategy
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 
+data class StrikeConfig(
+    val trainNumber: String,
+    val bookingClass: String
+)
+
+/**
+ * 🔥 AUTOMATION ORCHESTRATOR V3
+ * Unified Event Pipeline + Compatible with V26 Engine
+ */
 class AutomationOrchestrator(
-    private val eventBus: AutomationEventBus,
     private val workflowEngine: WorkflowEngine,
-    private val nodeFinder: NodeFinder,
-    private val actionExecutor: ActionExecutor,
     private val scope: CoroutineScope
 ) {
+    private val eventFlow = MutableSharedFlow<AccessibilityEvent>(
+        extraBufferCapacity = 50,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
 
-    private var lastScreen: ScreenType = ScreenType.UNKNOWN
+    private var executionJob: Job? = null
 
-    fun start(config: StrikeConfig, getRoot: () -> AccessibilityNodeInfo?) {
+    fun start(config: StrikeConfig) {
+        executionJob?.cancel()
 
-        val liveSteps = listOf(
-            RecordedStep(
-                id = "step_select_class",
-                action = ActionType.CLICK,
-                criteria = config.bookingClass,
-                maxRetries = 3 // 🔥 Excellent: Reliability बढ़ेगी
-            ),
-            RecordedStep(
-                id = "step_book_now",
-                action = ActionType.CLICK,
-                criteria = "Passenger",
-                maxRetries = 3
-            )
-        )
-
-        workflowEngine.loadRecording(liveSteps)
-
-        scope.launch(Dispatchers.Default) {
-            while (isActive) {
-
-                val root = getRoot()
-                if (root == null) {
-                    delay(200)
-                    continue
-                }
-
-                try {
-                    val screen = detectScreenType(root)
-
-                    // स्क्रीन state अपडेट
-                    if (screen != lastScreen) {
-                        lastScreen = screen
+        executionJob = scope.launch {
+            try {
+                Log.d("ORCHESTRATOR", "🚀 Starting strike for ${config.trainNumber} - ${config.bookingClass}")
+                
+                val liveSteps = buildSteps(config)
+                workflowEngine.loadRecording(liveSteps)                
+                workflowEngine.startReactiveListening(eventFlow)
+                
+                // ✅ V26 Engine Compatible Execution Loop
+                while (isActive) {
+                    val success = workflowEngine.onScreenChanged()
+                    if (success) {
+                        // Engine will internally advance to the next step.
+                        delay(100) 
+                    } else {
+                        Log.e("ORCHESTRATOR", "🛑 Workflow stopped or exhausted all retries.")
+                        break
                     }
-
-                    // 🔥 HUNTER MODE
-                    if (screen == ScreenType.SEARCH_RESULTS) {
-                        
-                        // सीधा इंजन को फायर करो
-                        workflowEngine.onScreenChanged(root)
-                        
-                        // ✅ Smart Delay: क्लिक के बाद स्क्रीन को सॉर्ट होने का टाइम मिलेगा
-                        delay(300) 
-                    }
-
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                } finally {
-                    root.recycle()
                 }
-
-                delay(200) // 🎯 scan frequency
+                
+            } catch (e: CancellationException) {
+                Log.d("ORCHESTRATOR", "⚠️ Strike cancelled")
+            } catch (e: Exception) {
+                Log.e("ORCHESTRATOR", "💥 Orchestrator error", e)
             }
         }
     }
 
-    private fun detectScreenType(root: AccessibilityNodeInfo): ScreenType {
+    fun onAccessibilityEvent(event: AccessibilityEvent) {
+        eventFlow.tryEmit(event)
+    }
 
-        val text = buildString {
-            root.text?.let { append(it) }
-            root.contentDescription?.let { append(it) }
-        }.lowercase()
+    private fun buildSteps(config: StrikeConfig): List<RecordedStep> {
+        return listOf(
+            // Step 1: Select Class
+            RecordedStep(
+                id = "step_select_class",
+                actionType = ActionType.CLICK,
+                criteria = config.trainNumber, 
+                targetClass = config.bookingClass, 
+                fallbackCriteria = listOf(config.bookingClass to SelectorType.TEXT), // ✅ Fixed type mismatch
+                maxRetries = 15,
+                postActionDelayMs = 300L,
+                verificationStrategy = VerificationStrategy.ScreenChanged(minHashDiff = 100L),
+                isCritical = true
+            ),
 
-        return when {
-            text.contains("search") || text.contains("sort by") || text.contains("quota") ->
-                ScreenType.SEARCH_RESULTS
+            // Step 2: Click 'Book Now'
+            RecordedStep(
+                id = "step_book_now",
+                actionType = ActionType.CLICK,
+                criteria = "Book Now",
+                targetId = "btn_book_now", 
+                fallbackCriteria = listOf(
+                    "BOOK NOW" to SelectorType.TEXT, 
+                    "Book" to SelectorType.TEXT
+                ), // ✅ Fixed type mismatch
+                maxRetries = 10,
+                postActionDelayMs = 500L,
+                verificationStrategy = VerificationStrategy.NodeExists(
+                    selector = "Passenger Details",
+                    selectorType = SelectorType.TEXT
+                ),
+                isCritical = true
+            ),
 
-            text.contains("passenger") ->
-                ScreenType.PASSENGER_DETAILS
+            // Step 3: Wait for Passenger Screen
+            RecordedStep(
+                id = "step_wait_passenger",
+                actionType = ActionType.WAIT,
+                criteria = "", 
+                postActionDelayMs = 1000L,
+                verificationStrategy = VerificationStrategy.NodeExists(
+                    selector = "Passenger Name",
+                    selectorType = SelectorType.TEXT
+                )
+            )
+        )
+    }
 
-            text.contains("payment") ->
-                ScreenType.PAYMENT
-
-            else -> ScreenType.UNKNOWN
+    fun reset() {
+        executionJob?.cancel()
+        // ✅ Fixed: reset() is a suspend function in V26
+        scope.launch { 
+            workflowEngine.reset() 
         }
+        Log.d("ORCHESTRATOR", "🔄 Orchestrator reset")
+    }
+
+    fun shutdown() {
+        executionJob?.cancel()
+        workflowEngine.shutdown()
+        scope.cancel()
+        Log.d("ORCHESTRATOR", "🔌 Orchestrator shutdown")
     }
 }
-
