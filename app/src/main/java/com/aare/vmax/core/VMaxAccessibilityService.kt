@@ -2,7 +2,6 @@ package com.aare.vmax.core.service
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
-import android.content.Intent
 import android.os.Handler
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
@@ -12,28 +11,29 @@ import kotlinx.coroutines.*
 
 class VMaxAccessibilityService : AccessibilityService(), GestureDispatcher {
 
-    private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob() + CoroutineName("VMaxService"))
+    private val job = SupervisorJob()
+    private val serviceScope = CoroutineScope(Dispatchers.Default + job)
+    private val mainScope = CoroutineScope(Dispatchers.Main + job)
+
     private lateinit var engine: WorkflowEngine
     private lateinit var orchestrator: AutomationOrchestrator
     private lateinit var panelManager: FloatingPanelManager
 
+    private var listeningStarted = false
+    private var lastEventTime = 0L
+    private val EVENT_THROTTLE = 50L
+
     override fun onServiceConnected() {
         super.onServiceConnected()
-        Log.d("VMAX_SERVICE", "🔌 Service connected | VMax Beast Online")
 
         engine = WorkflowEngine(
             getRoot = { rootInActiveWindow },
             gestureDispatcher = this,
-            config = EngineConfig(expectedPackageName = "in.irctc"),
             engineScope = serviceScope
         )
 
-        orchestrator = AutomationOrchestrator(
-            workflowEngine = engine,
-            scope = serviceScope
-        )
+        orchestrator = AutomationOrchestrator(engine, serviceScope)
 
-        // ✅ UI Panel Setup
         panelManager = FloatingPanelManager(
             context = this,
             engine = engine,
@@ -41,41 +41,56 @@ class VMaxAccessibilityService : AccessibilityService(), GestureDispatcher {
             scope = serviceScope
         )
 
-        engine.startReactiveListening(orchestrator.eventFlow)
-        
-        // UI को मेन थ्रेड पर दिखाएं
-        CoroutineScope(Dispatchers.Main).launch {
-            panelManager.show()
+        if (!listeningStarted) {
+            engine.startReactiveListening(orchestrator.eventFlow)
+            listeningStarted = true
+        }
+
+        mainScope.launch {
+            try {
+                panelManager.show()
+            } catch (e: Exception) {
+                Log.e("VMAX_SERVICE", "Panel show failed", e)
+            }
         }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        try {
-            event?.let {
-                engine.notifyEvent(it)
-                if (::orchestrator.isInitialized) {
-                    orchestrator.onAccessibilityEvent(it)
-                }
-            }
-        } catch (e: Exception) {}
-    }
+        event ?: return
 
-    override fun onInterrupt() {}
+        val now = System.currentTimeMillis()
+        if (now - lastEventTime < EVENT_THROTTLE) return
+        lastEventTime = now
+
+        try {
+            if (::engine.isInitialized) engine.notifyEvent(event)
+            if (::orchestrator.isInitialized) orchestrator.onAccessibilityEvent(event)
+        } catch (e: Exception) {
+            Log.e("VMAX_SERVICE", "Event error", e)
+        }
+    }
 
     override fun onDestroy() {
         if (::panelManager.isInitialized) panelManager.remove()
         if (::engine.isInitialized) engine.shutdown()
         if (::orchestrator.isInitialized) orchestrator.shutdown()
-        serviceScope.cancel()
+
+        job.cancel()
         super.onDestroy()
     }
 
-    // ✅ Android के फाइनल फंक्शन को बायपास किया (Crash Proof)
-    override fun executeCustomGesture(
+    override fun dispatchGesture(
         gesture: GestureDescription,
-        callback: AccessibilityService.GestureResultCallback?,
+        callback: GestureResultCallback?,
         handler: Handler?
     ): Boolean {
-        return dispatchGesture(gesture, callback, handler) 
+        return try {
+            super.dispatchGesture(gesture, callback, handler)
+        } catch (e: Exception) {
+            Log.e("VMAX_SERVICE", "Gesture failed", e)
+            false
+        }
     }
+
+    override fun onInterrupt() {}
 }
