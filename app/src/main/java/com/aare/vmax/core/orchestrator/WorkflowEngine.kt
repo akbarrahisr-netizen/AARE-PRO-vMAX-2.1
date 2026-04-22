@@ -6,7 +6,10 @@ import android.os.Handler
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.aare.vmax.core.models.ActionType
 import com.aare.vmax.core.models.RecordedStep
+import com.aare.vmax.core.models.SelectorType
+import com.aare.vmax.core.models.VerificationStrategy
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -18,35 +21,81 @@ import kotlin.coroutines.coroutineContext
 import kotlin.math.abs
 
 // =========================================================
-// 🔥 CORE CONCEPTS (Causal State Machine)
+// 🔥 CORE CONCEPTS (Autonomous & Safe)
 // =========================================================
 
 /**
- * 1️⃣ Causal Context (✅ FIX #1 & #2)
- * Replaces global action tracking with atomic, per-action context.
+ * Structural Fingerprint for strong causal detection
  */
-data class CausalContext(
-    val actionId: String,
-    val snapshotHash: Long,
-    val timestamp: Long
-)
-
-/**
- * 2️⃣ Node Snapshot for Hashing (Lightweight)
- */
-data class NodeSnapshot(
-    val viewId: String?,
-    val text: String?
+data class CausalFingerprint(
+    val nodeCount: Int,
+    val textHash: Long,
+    val structureHash: Long,
+    val positionHash: Long
 ) {
-    fun toHash(): Int {
-        return (viewId?.hashCode() ?: 0) * 31 + (text?.hashCode() ?: 0)
+    fun hasSignificantChange(other: CausalFingerprint): Boolean {
+        val nodeDelta = abs(nodeCount - other.nodeCount)
+        val textChanged = textHash != other.textHash
+        val structureChanged = structureHash != other.structureHash
+        // Position change is less critical for content verification but good for scroll
+        return nodeDelta > 0 || textChanged || structureChanged
     }
 }
 
-// =========================================================
-// 🔥 INTERFACES & CONFIG
-// =========================================================
+/**
+ * Safe Node Wrapper to prevent double-recycle crashes
+ */
+class NodeHandle(private val node: AccessibilityNodeInfo?) {
+    private var consumed = false
+    fun <T> use(block: (AccessibilityNodeInfo) -> T): T? {
+        if (consumed || node == null) return null
+        return try {
+            block(node)
+        } finally {
+            safeRecycle()
+        }
+    }
 
+    fun safeRecycle() {
+        if (!consumed) {
+            consumed = true
+            try { node?.recycle() } catch (_: Exception) {}
+        }
+    }
+    
+    companion object {
+        fun wrap(node: AccessibilityNodeInfo?): NodeHandle = NodeHandle(node)
+    }
+}
+
+/**
+ * Execution Memory for state awareness
+ */
+class ExecutionMemory {
+    var lastActionId: String? = null
+    var lastFingerprint: CausalFingerprint? = null
+    var lastStepId: String? = null
+    
+    fun reset() {
+        lastActionId = null
+        lastFingerprint = null
+        lastStepId = null
+    }
+}
+
+/**
+ * Autonomous Decision Engine
+ */
+sealed class ExecutionDecision {
+    object RETRY : ExecutionDecision()
+    object SCROLL : ExecutionDecision()
+    object SUCCESS : ExecutionDecision()
+    object FAIL : ExecutionDecision()
+}
+
+/**
+ * Interface for Gesture Dispatching
+ */
 interface GestureDispatcher {    fun dispatchGesture(
         gesture: android.accessibilityservice.GestureDescription,
         callback: android.accessibilityservice.AccessibilityService.GestureResultCallback?,
@@ -54,6 +103,9 @@ interface GestureDispatcher {    fun dispatchGesture(
     ): Boolean
 }
 
+/**
+ * Engine Configuration
+ */
 data class EngineConfig(
     val rowToleranceDp: Int = 48,
     val clickDelayMs: Long = 150L,
@@ -70,14 +122,12 @@ data class EngineConfig(
     val signatureDepthLimit: Int = 3,
     val signatureSampleRate: Int = 4,
     val allowedPackages: Set<String> = setOf("in.irctc", "com.android.chrome", "android.webkit", "irctc.co.in"),
-    val minScrollChangeThreshold: Double = 0.1, // Used as multiplier for hash diff
-    val enableSmoothing: Boolean = true,
-    val enableFrameAlignment: Boolean = true,
+    val minScrollChangeThreshold: Double = 0.1,
     val maxSignatureNodes: Int = 50
 )
 
 // =========================================================
-// 🔥 MAIN ENGINE CLASS (V24)
+// 🔥 MAIN ENGINE CLASS (V26)
 // =========================================================
 
 class WorkflowEngine(
@@ -91,16 +141,23 @@ class WorkflowEngine(
     private val executionMutex = Mutex()
     
     private val density = android.content.res.Resources.getSystem().displayMetrics.density
-    private val ROW_TOLERANCE_PX = (config.rowToleranceDp * density).toInt()
-    
+    private val ROW_TOLERANCE_PX = (config.rowToleranceDp * density).toInt()    
+
     // ✅ System Layers
     private val backoffScheduler = AdaptiveBackoffScheduler()
-    
-    // ✅ Event Channel    private val eventChannel = Channel<AccessibilityEvent>(capacity = 10, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    private val memory = ExecutionMemory()     
+    // ✅ Event Channel
+    private val eventChannel = Channel<AccessibilityEvent>(capacity = 10, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     private var lastValidEventTime = 0L
     
-    // ✅ FIX #1 & #2: Atomic Causal Context (No global mutable state)
+    // ✅ Atomic Causal Context
     private val causalContext = AtomicReference<CausalContext?>(null)
+
+    data class CausalContext(
+        val actionId: String,
+        val fingerprint: CausalFingerprint,
+        val timestamp: Long
+    )
 
     // =========================================================
     // 📥 REACTIVE LISTENER
@@ -118,13 +175,9 @@ class WorkflowEngine(
 
     private fun isValidUiEvent(event: AccessibilityEvent): Boolean {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
-            event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
-            return false
-        }
-        
+            event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return false
         val pkg = event.packageName?.toString()
         if (pkg.isNullOrEmpty()) return false
-        
         return config.allowedPackages.contains(pkg)
     }
 
@@ -141,16 +194,18 @@ class WorkflowEngine(
     suspend fun loadRecording(list: List<RecordedStep>) = executionMutex.withLock {
         steps.clear()
         steps.addAll(list)
-        currentIndex = 0
-        lastValidEventTime = 0L
+        currentIndex = 0        lastValidEventTime = 0L
         backoffScheduler.reset()
+        memory.reset()
         causalContext.set(null)
-        Log.d("VMAX_FLOW", "📦 Loaded ${list.size} steps | Causal State Machine Mode: ON")    }
+        Log.d("VMAX_FLOW", "📦 Loaded ${list.size} steps | Autonomous Agent Mode: ON")
+    }
 
     suspend fun reset() = executionMutex.withLock {
         currentIndex = 0
         lastValidEventTime = 0L
         backoffScheduler.reset()
+        memory.reset()
         causalContext.set(null)
         Log.d("VMAX_FLOW", "🔄 Engine reset")
     }
@@ -178,188 +233,149 @@ class WorkflowEngine(
     }
 
     // =========================================================
-    // 🎯 EXECUTION LOOP (Causal State Machine)
+    // 🎯 AUTONOMOUS EXECUTION LOOP
     // =========================================================
-    private suspend fun executeStep(step: RecordedStep): Boolean {
+    private suspend fun executeStep(step: RecordedStep): Boolean {        
         var attempts = 0
         val maxAttempts = step.maxRetries.coerceAtLeast(config.defaultMaxRetries)
 
+        // Capture pre-action state
+        val rootHandle = NodeHandle.wrap(safeRoot())
+        val preFingerprint = rootHandle.use { buildFingerprint(it) } ?: return false
+        
+        val actionId = "${step.id}_${System.nanoTime()}"        causalContext.set(CausalContext(actionId, preFingerprint, System.currentTimeMillis()))
+        
+        memory.lastActionId = actionId
+        memory.lastFingerprint = preFingerprint
+        memory.lastStepId = step.id
+
         while (attempts < maxAttempts && coroutineContext.isActive) {
             try {
-                // ✅ FIX #3: Safe Root Handling (Obtain + Recycle)
-                val root = safeRoot() ?: run {
-                    delay(config.rootRetryDelayMs)
-                    attempts++
-                    continue
+                val currentRootHandle = NodeHandle.wrap(safeRoot())
+                
+                // Resolve target node safely
+                val target = currentRootHandle.use { root -> resolveTargetNode(root, step) }
+                
+                // Execute Action
+                val actionSuccess = when (step.actionType) {
+                    ActionType.CLICK -> target?.use { it.performAction(AccessibilityNodeInfo.ACTION_CLICK) } ?: false
+                    ActionType.SCROLL -> currentRootHandle.use { smartScrollVerified(it, actionId) } ?: false
+                    ActionType.INPUT_TEXT -> target?.use { it.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, null) } ?: false
+                    ActionType.WAIT -> { delay(step.postActionDelayMs); true }
+                    else -> false
                 }
                 
-                try {
-                    // ✅ FIX #2: Build Causal Context for this specific attempt                    val snapshotHash = buildSnapshotHash(root)
-                    val actionId = "${step.id}_${System.nanoTime()}"
-                    
-                    val context = CausalContext(
-                        actionId = actionId,
-                        snapshotHash = snapshotHash,
-                        timestamp = System.currentTimeMillis()
-                    )
-                    
-                    // Set atomic context
-                    causalContext.set(context)
-                    
-                    Log.d("VMAX_FLOW", "🎯 [${step.id}] Target: '${step.criteria}' | Try ${attempts + 1}/$maxAttempts | ActionID: $actionId")
-
-                    val clicked = when {
-                        step.id == "step_select_class" && step.criteria.contains(":") -> {
-                            val parts = step.criteria.split(":").map { it.trim() }
-                            if (parts.size >= 2) targetedClick(root, parts[0], parts[1], actionId) else false
-                        }
-                        step.criteria.startsWith("@id/") -> findNodeByResourceId(root, step.criteria.removePrefix("@id/"))?.let { smartClick(it, actionId) } ?: false
-                        step.criteria.startsWith("@desc/") -> findNodeByContentDesc(root, step.criteria.removePrefix("@desc/"))?.let { smartClick(it, actionId) } ?: false
-                        step.criteria.startsWith("@class/") -> findNodeByClassName(root, step.criteria.removePrefix("@class/"))?.let { smartClick(it, actionId) } ?: false
-                        else -> findNode(root, step.criteria)?.let { smartClick(it, actionId) } ?: false
+                // Make Autonomous Decision
+                val decision = makeDecision(attempts, maxAttempts, actionSuccess, step)                
+                
+                when (decision) {
+                    ExecutionDecision.SUCCESS -> { 
+                        backoffScheduler.reset()
+                        return true 
                     }
-
-                    if (clicked) {
-                        // ✅ FIX #4: Wait for causally correlated event using Atomic Context
-                        if (waitForCausalEvent(actionId, config.verificationDelayMs)) {
-                            if (verifySuccess(step)) {
-                                backoffScheduler.reset()
-                                return true
+                    ExecutionDecision.RETRY -> { 
+                        attempts++
+                        delay(backoffScheduler.nextDelay()) 
+                    }
+                    ExecutionDecision.SCROLL -> {
+                        // Attempt scroll as fallback
+                        currentRootHandle.use { root ->
+                            if (smartScrollVerified(root, actionId)) {
+                                attempts++ 
+                            } else {
+                                attempts = maxAttempts // Force fail if scroll fails
                             }
                         }
-                    } else {
-                        // Scroll fallback
-                        if (!smartScrollVerified(root, actionId)) {
-                            Log.d("VMAX_FLOW", "🛑 Scroll failed or exhausted")
-                            return false
-                        }
                     }
-                    
-                    attempts++
-                    
-                } finally {
-                    // ✅ FIX #3: Always recycle the obtained root
-                    root.recycle()
+                    ExecutionDecision.FAIL -> return false
                 }
                 
             } catch (e: Exception) {
-                Log.e("VMAX_FLOW", "💥 ${e.message}", e)                attempts++
+                Log.e("VMAX_FLOW", "💥 ${e.message}", e)
+                attempts++                delay(backoffScheduler.nextDelay())
             }
-
-            // ✅ Adaptive Backoff Delay
-            val delayMs = backoffScheduler.nextDelay()
-            delay(delayMs)
         }
         Log.e("VMAX_FLOW", "❌ Step[${step.id}] failed after $attempts attempts")
         return false
     }
 
+    // ✅ Autonomous Decision Logic
+    private suspend fun makeDecision(attempt: Int, max: Int, actionSuccess: Boolean, step: RecordedStep): ExecutionDecision {
+        if (!actionSuccess) {
+            // If action failed (e.g., node not found), decide next move
+            return when {
+                attempt < max / 2 -> ExecutionDecision.RETRY // Try finding again
+                attempt < max -> ExecutionDecision.SCROLL   // Maybe it's below fold
+                else -> ExecutionDecision.FAIL
+            }
+        }        
+        // Action succeeded, now verify
+        val verified = verifyStepSuccess(step, memory.lastFingerprint!!)
+        return if (verified) ExecutionDecision.SUCCESS else ExecutionDecision.RETRY
+    }
+
     // =========================================================
-    // 🛡 SAFE ROOT HANDLING (✅ FIX #3)
+    // 🛡 SAFE ROOT HANDLING
     // =========================================================
     private fun safeRoot(): AccessibilityNodeInfo? {
         val root = getRoot() ?: return null
-        // Obtain a copy to ensure we own the lifecycle
-        return try {
-            AccessibilityNodeInfo.obtain(root)
-        } catch (e: Exception) {
-            null
+        return try { 
+            AccessibilityNodeInfo.obtain(root) 
+        } catch (e: Exception) { 
+            null 
         }
     }
 
     // =========================================================
-    // 📸 SNAPSHOT HASHING (✅ FIX #1: Lightweight & Fast)
+    // 📸 STRONG CAUSAL FINGERPRINT
     // =========================================================
-    private fun buildSnapshotHash(root: AccessibilityNodeInfo): Long {
+    private fun buildFingerprint(root: AccessibilityNodeInfo): CausalFingerprint {
         val cursor = TreeCursor(root)
-        var hash = 1L
         var count = 0
+        var textHash = 0L
+        var posHash = 0L
+        var structureHash = 0L
 
         try {
             while (true) {
                 val node = cursor.nextVisibleNode() ?: break
                 count++
 
-                // Simple, fast hash components
-                hash = 31 * hash + (node.viewIdResourceName?.hashCode() ?: 0)
-                hash = 31 * hash + (node.text?.hashCode() ?: 0)
-                hash = 31 * hash + (node.className?.hashCode() ?: 0)
+                textHash = textHash * 31 + (node.text?.hashCode() ?: 0)
+                val r = Rect()
+                node.getBoundsInScreen(r)
+                posHash = posHash * 31 + (r.centerX() + r.centerY())
 
+                structureHash = structureHash * 31 + (node.className?.hashCode() ?: 0)
+                
                 if (count > config.maxSignatureNodes) break
             }
-        } finally {
-            cursor.close()
+        } finally { 
+            cursor.close() 
         }
-        return hash
-    }
-    // =========================================================
-    // 🎯 TARGETED CLICK (Causal)
-    // =========================================================
-    private fun targetedClick(root: AccessibilityNodeInfo, trainNo: String, targetClass: String, actionId: String): Boolean {
-        val trainNodes = root.findAccessibilityNodeInfosByText(trainNo)
-        if (trainNodes.isNullOrEmpty()) return false
 
-        val trainNode = trainNodes.firstOrNull { it.isVisibleToUser && it.isClickableOrHasClickableChild() }
-        trainNodes.filter { it != trainNode }.forEach { it.recycle() }
-        if (trainNode == null) return false
-
-        val trainRect = Rect()
-        trainNode.getBoundsInScreen(trainRect)
-        val trainCenterY = (trainRect.top + trainRect.bottom) / 2
-
-        var parent: AccessibilityNodeInfo? = trainNode
-        var depth = 0
-
-        while (parent != null && depth < config.maxParentDepth) {
-            var classNodes: List<AccessibilityNodeInfo>? = null
-            try {
-                classNodes = parent.findAccessibilityNodeInfosByText(targetClass)
-                val match = classNodes?.firstOrNull { node ->
-                    if (!node.isVisibleToUser) return@firstOrNull false
-                    val rect = Rect()
-                    node.getBoundsInScreen(rect)
-                    val nodeCenterY = (rect.top + rect.bottom) / 2
-                    abs(nodeCenterY - trainCenterY) < ROW_TOLERANCE_PX
-                }
-
-                if (match != null) {
-                    val res = smartClick(match, actionId)
-                    match.recycle()
-                    return res
-                }
-            } finally {
-                classNodes?.forEach { if (it != trainNode) it.recycle() }
-            }
-            val old = parent
-            parent = parent.parent
-            if (old != trainNode) old?.recycle()
-            depth++
-        }
-        trainNode.recycle()
-        return false
+        return CausalFingerprint(count, textHash, structureHash, posHash)
     }
 
     // =========================================================
-    // 🖱 SMART CLICK (Causal & Validated)
-    // =========================================================    private suspend fun smartClick(node: AccessibilityNodeInfo, actionId: String): Boolean {
-        if (node.isClickable && node.isEnabled && node.isVisibleToUser) {
-            val result = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            if (result) {
-                return waitForCausalEvent(actionId, config.clickDelayMs)
-            }
-            return false
-        }
+    // 🎯 TARGET RESOLUTION ENGINE
+    // =========================================================
+    private fun resolveTargetNode(root: AccessibilityNodeInfo, step: RecordedStep): NodeHandle? {
+        val selectors = step.getAllSelectors()
         
-        if (node.isVisibleToUser) {
-            if (node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)) {
-                delay(config.clickDelayMs)
-                val result = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                if (result) {
-                    return waitForCausalEvent(actionId, config.clickDelayMs)
-                }
+        for ((value, type) in selectors) {
+            val rawNode = when (type) {
+                SelectorType.RESOURCE_ID -> findNodeByResourceId(root, value)
+                SelectorType.CONTENT_DESC -> findNodeByContentDesc(root, value)
+                SelectorType.CLASS_NAME -> findNodeByClassName(root, value)
+                SelectorType.TEXT -> findNode(root, value)
+            }
+            
+            if (rawNode != null) {
+                return NodeHandle.wrap(rawNode)
             }
         }
-        return false
+        return null
     }
 
     // =========================================================
@@ -374,25 +390,24 @@ class WorkflowEngine(
             val cy = rect.centerY().toFloat()
             val swipeLength = rect.height() * 0.6f
 
-            val path = buildSmoothPath(cx, cy, swipeLength)
+            val path = Path().apply {                moveTo(cx, cy + swipeLength / 2)
+                lineTo(cx, cy - swipeLength / 2)
+            }
 
             val gesture = android.accessibilityservice.GestureDescription.Builder()
                 .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 150))
                 .build()
 
-            // ✅ FIX #6: Gesture Pipeline with Hash Comparison
             val gestureSuccess = executeGestureWithAck(
                 gesture = gesture,
                 actionId = actionId,
                 verifyChange = {
-                    val newRoot = safeRoot() ?: return@executeGestureWithAck false
-                    try {
-                        val newHash = buildSnapshotHash(newRoot)
-                        val oldHash = causalContext.get()?.snapshotHash ?: 0L
-                        // Significant change detected
-                        abs(newHash - oldHash) > (config.minScrollChangeThreshold * 1000).toLong()                    } finally {
-                        newRoot.recycle()
-                    }
+                    val newRootHandle = NodeHandle.wrap(safeRoot())
+                    newRootHandle.use { newRoot ->
+                        val newFp = buildFingerprint(newRoot)
+                        val oldFp = causalContext.get()?.fingerprint
+                        oldFp?.hasSignificantChange(newFp) == true
+                    } ?: false
                 },
                 timeoutMs = 1500L
             )
@@ -401,34 +416,15 @@ class WorkflowEngine(
 
             waitForCausalEvent(actionId, config.scrollDelayMs)
 
-            val newRoot = safeRoot() ?: return false
-            try {
-                val newHash = buildSnapshotHash(newRoot)
-                val oldHash = causalContext.get()?.snapshotHash ?: 0L
-                
-                if (abs(newHash - oldHash) <= (config.minScrollChangeThreshold * 1000).toLong()) {
-                    Log.d("VMAX_FLOW", "🔄 Scroll gesture succeeded but UI didn't change significantly")
-                    return false
-                }
-                Log.d("VMAX_FLOW", "✅ Scroll verified")
-                return true
-            } finally {
-                newRoot.recycle()
-            }
+            val newRootHandle = NodeHandle.wrap(safeRoot())
+            return newRootHandle.use { newRoot ->
+                val newFp = buildFingerprint(newRoot)
+                val oldFp = causalContext.get()?.fingerprint
+                oldFp?.hasSignificantChange(newFp) == true
+            } ?: false
             
-        } finally {
-            scrollable.recycle()
-        }
-    }
-
-    private fun buildSmoothPath(cx: Float, cy: Float, len: Float): Path {
-        return Path().apply {
-            moveTo(cx, cy + len / 2)
-            cubicTo(
-                cx + 10, cy,
-                cx - 10, cy,
-                cx, cy - len / 2
-            )
+        } finally { 
+            scrollable.recycle() 
         }
     }
 
@@ -439,14 +435,14 @@ class WorkflowEngine(
             try {
                 val res = findScrollable(child)
                 if (res != null) return res
-            } finally {                child.recycle()
+            } finally {
+                child.recycle()
             }
         }
-        return null
-    }
+        return null    }
 
     // =========================================================
-    // 🔥 GESTURE ACK PIPELINE (✅ FIX #6: Scope Binding)
+    // 🔥 GESTURE ACK PIPELINE
     // =========================================================
     private suspend fun executeGestureWithAck(
         gesture: android.accessibilityservice.GestureDescription,
@@ -455,89 +451,97 @@ class WorkflowEngine(
         timeoutMs: Long = 1500L
     ): Boolean {
         return withTimeoutOrNull(timeoutMs) {
-            suspendCoroutine { cont ->
+            suspendCancellableCoroutine { cont ->
                 val callback = object : android.accessibilityservice.AccessibilityService.GestureResultCallback() {
                     override fun onCompleted(g: android.accessibilityservice.GestureDescription?) {
-                        if (!cont.isCompleted) {
+                        if (cont.isActive) {
                             engineScope.launch {
                                 val changed = verifyChange()
-                                if (cont.isActive) cont.resume(changed)
+                                if (cont.isActive) cont.resume(changed) {}
                             }
                         }
                     }
                     override fun onCancelled(g: android.accessibilityservice.GestureDescription?) {
-                        if (!cont.isCompleted && cont.isActive) cont.resume(false)
+                        if (cont.isActive) cont.resume(false) {}
                     }
                 }
                 
                 val dispatched = gestureDispatcher.dispatchGesture(gesture, callback, null)
-                if (!dispatched && !cont.isCompleted) {
-                    cont.resume(false)
+                if (!dispatched && cont.isActive) {
+                    cont.resume(false) {}
                 }
             }
         } ?: false
     }
 
     // =========================================================
-    // ✅ UI STABILITY & HASHING (Iterative Cursor)
+    // ✅ DECOUPLED VERIFICATION ENGINE
     // =========================================================
-    
-    // ✅ FIX #2: Safe TreeCursor with clear ownership (Pure Iterator)
-    class TreeCursor(private val root: AccessibilityNodeInfo) {
-        private val queue = ArrayDeque<AccessibilityNodeInfo>()
-        private var nodesVisited = 0
-        private val maxNodes = 100
-
-        init {            queue.addLast(root)
-        }
-
-        fun nextVisibleNode(): AccessibilityNodeInfo? {
-            while (queue.isNotEmpty() && nodesVisited < maxNodes) {
-                val current = queue.removeFirst()
-                nodesVisited++
-                
-                if (current.isVisibleToUser) {
-                    for (i in 0 until current.childCount) {
-                        current.getChild(i)?.let { queue.addLast(it) }
-                    }
-                    return current // Caller owns this node
-                } else {
-                    current.recycle()
-                }
+    private suspend fun verifyStepSuccess(step: RecordedStep, oldFingerprint: CausalFingerprint): Boolean {
+        return when (val strategy = step.verificationStrategy) {
+            is VerificationStrategy.None -> true
+            
+            is VerificationStrategy.ScreenChanged -> {
+                val rootHandle = NodeHandle.wrap(safeRoot())
+                rootHandle.use { root ->
+                    val newFp = buildFingerprint(root)
+                    oldFingerprint.hasSignificantChange(newFp)
+                } ?: false
             }
-            return null
-        }
-
-        fun close() {
-            queue.forEach { it.recycle() }
-            queue.clear()
+                        is VerificationStrategy.NodeExists -> {
+                val rootHandle = NodeHandle.wrap(safeRoot())
+                rootHandle.use { root ->
+                    val tempStep = RecordedStep(
+                        id = "temp_verify",
+                        criteria = strategy.selector,
+                        verificationStrategy = VerificationStrategy.None
+                    )
+                    resolveTargetNode(root, tempStep) != null
+                } ?: false
+            }
+            
+            is VerificationStrategy.TextAppears -> {
+                val rootHandle = NodeHandle.wrap(safeRoot())
+                rootHandle.use { root ->
+                    findNode(root, strategy.text) != null
+                } ?: false
+            }
+            
+            is VerificationStrategy.ElementDisappears -> {
+                val rootHandle = NodeHandle.wrap(safeRoot())
+                rootHandle.use { root ->
+                    findNode(root, strategy.selector) == null
+                } ?: false
+            }
         }
     }
 
     // =========================================================
-    // 🔥 CAUSAL EVENT WAITING (✅ FIX #4: Strict Validation)
+    // 🔥 CAUSAL EVENT WAITING
     // =========================================================
     private suspend fun waitForCausalEvent(actionId: String, timeoutMs: Long): Boolean {
         val context = causalContext.get() ?: return false
-        
-        // Ensure we are waiting for the correct action
         if (context.actionId != actionId) return false
 
         return withTimeoutOrNull(timeoutMs) {
-            // ✅ FIX #4: Use receiveAsFlow().first for strict causal matching
             eventChannel.receiveAsFlow().first { event ->
-                val root = safeRoot() ?: return@first false
-                try {
-                    val newHash = buildSnapshotHash(root)
-                    val diff = abs(newHash - context.snapshotHash)
-                    
-                    // Strict validation: Event type must be content change AND hash must differ
-                    event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED && diff > 0
-                } finally {
-                    root.recycle()
-                }
+                val rootHandle = NodeHandle.wrap(safeRoot())
+                val isCausal = rootHandle.use { root ->
+                    val newFp = buildFingerprint(root)
+                    isCausalEvent(event, context.fingerprint, newFp)
+                } ?: false
+                isCausal
             }
-            true // If first() returns, condition was met        } ?: false
+            true
+        } ?: false
+    }
+    
+    private fun isCausalEvent(event: AccessibilityEvent, before: CausalFingerprint, after: CausalFingerprint): Boolean {
+        val nodeDelta = abs(after.nodeCount - before.nodeCount)        val textDelta = after.textHash != before.textHash
+        val structureDelta = after.structureHash != before.structureHash
+
+        return event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
+               (nodeDelta > 0 || textDelta || structureDelta)
     }
 
     // =========================================================
@@ -552,7 +556,7 @@ class WorkflowEngine(
                 if (current.contentDescription == target && current.isVisibleToUser) {
                     queue.forEach { if (it != current) it.recycle() }
                     queue.clear()
-                    return AccessibilityNodeInfo.obtain(current) // Caller owns this
+                    return AccessibilityNodeInfo.obtain(current)
                 }
                 for (i in 0 until current.childCount) {
                     current.getChild(i)?.let { queue.addLast(it) }
@@ -571,23 +575,22 @@ class WorkflowEngine(
         val nodes = root.findAccessibilityNodeInfosByViewId(fullId)
         val target = nodes?.firstOrNull { it.isVisibleToUser }
         nodes?.filter { it != target }?.forEach { it.recycle() }
-        return target // Caller owns this
+        return target
     }
 
     private fun findNodeByClassName(root: AccessibilityNodeInfo, cls: String): AccessibilityNodeInfo? {
         val nodes = root.findAccessibilityNodeInfosByClassName(cls)
         val target = nodes?.firstOrNull { it.isVisibleToUser }
         nodes?.filter { it != target }?.forEach { it.recycle() }
-        return target // Caller owns this
+        return target
     }
 
     private fun findNode(root: AccessibilityNodeInfo, text: String): AccessibilityNodeInfo? {
-        val nodes = root.findAccessibilityNodeInfosByText(text)
-        val target = nodes?.firstOrNull { it.isVisibleToUser && (it.isClickable || it.isClickableOrHasClickableChild()) }
+        val nodes = root.findAccessibilityNodeInfosByText(text)        val target = nodes?.firstOrNull { it.isVisibleToUser && (it.isClickable || it.isClickableOrHasClickableChild()) }
         nodes?.filter { it != target }?.forEach { it.recycle() }
-        return target // Caller owns this
+        return target
     }
-    // ✅ Iterative check for clickable child (No Recursion)
+
     private fun AccessibilityNodeInfo.isClickableOrHasClickableChild(): Boolean {
         if (isClickable && isEnabled) return true
         
@@ -614,61 +617,42 @@ class WorkflowEngine(
     }
 
     // =========================================================
-    // ✅ VERIFICATION
+    // ✅ TREE CURSOR (Iterative)
     // =========================================================
-    private suspend fun verifySuccess(step: RecordedStep): Boolean {
-        val criteria = step.successCriteria?.takeIf { it.isNotBlank() } ?: getDefaultSuccessCriteria(step.id)
-        if (criteria.isEmpty()) return true
+    class TreeCursor(private val root: AccessibilityNodeInfo) {
+        private val queue = ArrayDeque<AccessibilityNodeInfo>()
+        private var nodesVisited = 0
+        private val maxNodes = 100
 
-        repeat(config.verificationAttempts) { attempt ->
-            val newRoot = safeRoot() ?: run { 
-                waitForCausalEvent(step.id, config.verificationDelayMs)
-                return@repeat 
-            }
-            try {
-                if (checkCriteria(newRoot, criteria)) return true
-            } finally {
-                newRoot.recycle()
-            }
-            if (attempt < config.verificationAttempts - 1) {
-                waitForCausalEvent(step.id, config.verificationDelayMs)
-            }
+        init {
+            queue.addLast(root)
         }
-        return false
-    }
-    private fun checkCriteria(root: AccessibilityNodeInfo, criteria: String): Boolean {
-        val options = criteria.split("|").map { it.trim() }.filter { it.isNotEmpty() }
-        for (opt in options) {
-            when {
-                opt.startsWith("@id/") -> {
-                    val node = findNodeByResourceId(root, opt.removePrefix("@id/"))
-                    if (node != null) { node.recycle(); return true }
-                }
-                opt.startsWith("@desc/") -> {
-                    val node = findNodeByContentDesc(root, opt.removePrefix("@desc/"))
-                    if (node != null) { node.recycle(); return true }
-                }
-                else -> {
-                    val nodes = root.findAccessibilityNodeInfosByText(opt)
-                    val found = nodes?.any { it.isVisibleToUser && it.text?.contains(opt, true) == true } == true
-                    nodes?.forEach { it.recycle() }
-                    if (found) return true
-                }
-            }
-        }
-        return false
-    }
 
-    private fun getDefaultSuccessCriteria(stepId: String): String = when (stepId) {
-        "step_select_class" -> "@id/passenger_details|passenger"
-        "step_book_now" -> "@id/payment_container|captcha"
-        "step_login" -> "@id/home_screen|dashboard"
-        else -> ""
+        fun nextVisibleNode(): AccessibilityNodeInfo? {
+            while (queue.isNotEmpty() && nodesVisited < maxNodes) {
+                val current = queue.removeFirst()
+                nodesVisited++
+                
+                if (current.isVisibleToUser) {
+                    for (i in 0 until current.childCount) {
+                        current.getChild(i)?.let { queue.addLast(it) }                    }
+                    return current
+                } else {
+                    current.recycle()
+                }
+            }
+            return null
+        }
+
+        fun close() {
+            queue.forEach { it.recycle() }
+            queue.clear()
+        }
     }
 }
 
 // =========================================================
-// 🔥 ADAPTIVE BACKOFF SCHEDULER (Safe Math)
+// 🔥 ADAPTIVE BACKOFF SCHEDULER
 // =========================================================
 class AdaptiveBackoffScheduler {
     private var baseDelay = 100L
@@ -676,14 +660,14 @@ class AdaptiveBackoffScheduler {
     
     fun nextDelay(): Long {
         attemptCount++
-        // ✅ Safe bounded exponential: 100, 200, 400... capped at 2000
-        val shiftAmount = (attemptCount - 1).coerceAtMost(10) // Prevent overflow
+        val shiftAmount = (attemptCount - 1).coerceAtMost(10)
         val exponential = baseDelay * (1L shl shiftAmount)
         val jitter = (Math.random() * 50).toLong()
         return (exponential + jitter).coerceAtMost(2000L)
     }
     
     fun reset() {
-        baseDelay = 100L        attemptCount = 0
+        baseDelay = 100L
+        attemptCount = 0
     }
 }
