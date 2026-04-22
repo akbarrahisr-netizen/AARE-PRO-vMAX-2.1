@@ -1,29 +1,10 @@
+
 <?xml version="1.0" encoding="utf-8"?>
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-
-    <!-- EVENT TYPES -->
-    android:accessibilityEventTypes="
-        typeWindowStateChanged|
-        typeWindowContentChanged|
-        typeViewClicked|
-        typeViewFocused"
-
-    <!-- FEEDBACK -->
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewClicked|typeViewFocused"
     android:accessibilityFeedbackType="feedbackGeneric"
-
-    <!-- FLAGS (OPTIMIZED FOR PERFORMANCE) -->
-    android:accessibilityFlags="
-        flagDefault|
-        flagRetrieveInteractiveWindows|
-        flagIncludeNotImportantViews|
-        flagReportViewIds"
-
-    <!-- CORE CAPABILITIES -->
+    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews|flagReportViewIds"
     android:canRetrieveWindowContent="true"
     android:canPerformGestures="true"
-
-    <!-- PERFORMANCE -->
-    android:notificationTimeout="50"
-
-    <!-- TARGET PACKAGES (FILTERED FOR STABILITY) -->
+    android:notificationTimeout="100"
     android:packageNames="in.irctc,com.android.chrome,irctc.co.in" />
