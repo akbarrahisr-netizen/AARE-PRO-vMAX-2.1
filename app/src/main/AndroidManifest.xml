@@ -1,22 +1,16 @@
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.aare.vmax">
 
-    <!-- ✅ Required Permission -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <!-- 🔥 Overlay Permission -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    
+    <!-- 🔥 Accessibility Service -->
+    <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" />
 
-    <!-- ✅ App visibility (Android 11+) -->
-    <queries>
-        <package android:name="cris.org.in.prs.ima" />
-    </queries>
-
-    <application
-        android:allowBackup="true"
-        android:label="vMAX 2.1"
-        android:supportsRtl="true"
-        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
-
-        <activity
-            android:name=".MainActivity"
+    <application ... >
+        
+        <!-- MainActivity -->
+        <activity android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -24,21 +18,18 @@
             </intent-filter>
         </activity>
 
+        <!-- 🔥 Accessibility Service Declaration -->
         <service
-            android:name=".VMaxAccessibilityService"
-            android:exported="true"
+            android:name=".service.VMaxAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:label="Rail Assist Service">
-
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
-
             <meta-data
                 android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config"/>
+                android:resource="@xml/accessibility_service_config" />
         </service>
 
     </application>
-
 </manifest>
