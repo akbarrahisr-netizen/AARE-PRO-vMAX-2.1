@@ -1,123 +1,64 @@
+package com.aare.vmax
+
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.provider.Settings
+import androidx.appcompat.app.AppCompatActivity
+
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var binding: ActivityMainBinding
-
-    private val overlayLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { bootCheck() }
+    private val overlayPermissionLauncher =
+        registerForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+        ) {
+            checkPermissions()
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        initUI()
-        bootCheck()
+        checkPermissions()
     }
 
-    // =====================================================
-    // 🧠 SYSTEM STATE CHECKER (CORE)
-    // =====================================================
-    private fun bootCheck() {
-        val overlay = Settings.canDrawOverlays(this)
-        val access = isAccessibilityServiceEnabled()
-
-        updateUI(overlay, access)
-
-        if (overlay && access) {
-            enterReadyMode()
-        }
+    override fun onResume() {
+        super.onResume()
+        checkPermissions()
     }
 
-    // =====================================================
-    // 🎯 UI INIT
-    // =====================================================
-    private fun initUI() {
-
-        binding.btnEnableService.setOnClickListener {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-        }
-
-        binding.btnGrantOverlay.setOnClickListener {
-            requestOverlay()
-        }
-
-        // 🚀 ONE BUTTON “SNIPER MODE”
-        binding.btnStart.setOnClickListener {
-            if (Settings.canDrawOverlays(this) && isAccessibilityServiceEnabled()) {
-                launchSniperCore()
-            } else {
-                Toast.makeText(this, "Enable permissions first", Toast.LENGTH_SHORT).show()
-                bootCheck()
-            }
-        }
-    }
-
-    // =====================================================
-    // ⚡ OVERLAY REQUEST
-    // =====================================================
-    private fun requestOverlay() {
+    private fun checkPermissions() {
+        // 1. Overlay Permission Check
         if (!Settings.canDrawOverlays(this)) {
-            overlayLauncher.launch(
+            overlayPermissionLauncher.launch(
                 Intent(
                     Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:$packageName")
                 )
             )
+            return
         }
+
+        // 2. Accessibility Permission Check
+        if (!isAccessibilityEnabled()) {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            return
+        }
+
+        startMainApp()
+        finish() // सब सही है, ऐप को बैकग्राउंड में भेजें
     }
 
-    // =====================================================
-    // 🔥 READY MODE (ALL SYSTEMS GREEN)
-    // =====================================================
-    private fun enterReadyMode() {
-        binding.tvInstruction.text = "🚀 SYSTEM READY — SNIPER MODE ENABLED"
-        binding.btnStart.isEnabled = true
-        binding.btnStart.alpha = 1.0f
+    private fun startMainApp() {
+        // यहाँ से सर्विस बैकग्राउंड में अपना काम संभाल लेगी
     }
 
-    // =====================================================
-    // 🧠 UI STATE ENGINE
-    // =====================================================
-    private fun updateUI(overlay: Boolean, access: Boolean) {
-
-        binding.overlayStatus.text =
-            if (overlay) "✅ Overlay READY" else "❌ Overlay MISSING"
-
-        binding.accessibilityStatus.text =
-            if (access) "✅ ACCESS READY" else "❌ ACCESS MISSING"
-
-        binding.btnGrantOverlay.isEnabled = !overlay
-        binding.btnEnableService.isEnabled = !access
-
-        binding.btnGrantOverlay.alpha = if (overlay) 0.4f else 1.0f
-        binding.btnEnableService.alpha = if (access) 0.4f else 1.0f
-
-        binding.btnStart.isEnabled = overlay && access
-    }
-
-    // =====================================================
-    // 🚀 SNIPER CORE BOOTSTRAP
-    // =====================================================
-    private fun launchSniperCore() {
-        Toast.makeText(this, "🚀 Launching Sniper Core...", Toast.LENGTH_SHORT).show()
-
-        // Example: start floating service / orchestrator entry
-        val intent = Intent(this, com.aare.vmax.service.SniperService::class.java)
-        startService(intent)
-    }
-
-    // =====================================================
-    // 🧠 ACCESSIBILITY CHECK
-    // =====================================================
-    private fun isAccessibilityServiceEnabled(): Boolean {
-        val serviceName = "$packageName/.service.VMaxAccessibilityService"
-
+    private fun isAccessibilityEnabled(): Boolean {
+        // ✅ असली सर्विस का सही रास्ता 
+        val expected = "$packageName/com.aare.vmax.core.service.VMaxAccessibilityService"
         val enabled = Settings.Secure.getString(
             contentResolver,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: ""
+        ) ?: return false
 
-        return enabled.contains(serviceName)
+        return enabled.contains(expected)
     }
 }
