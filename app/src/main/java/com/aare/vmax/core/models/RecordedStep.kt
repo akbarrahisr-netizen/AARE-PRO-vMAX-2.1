@@ -1,42 +1,86 @@
-private fun resolveTargetNode(
-    root: AccessibilityNodeInfo,
-    step: RecordedStep
-): SafeNode? {
+package com.aare.vmax.core.models
 
-    val selectors = step.getAllSelectors()
+enum class ActionType {
+    CLICK, SCROLL, SWIPE, INPUT_TEXT, WAIT, FOCUS, RECOVER
+}
 
-    val candidates = mutableListOf<AccessibilityNodeInfo>()
+enum class SelectorType {
+    RESOURCE_ID,
+    CONTENT_DESC,
+    CLASS_NAME,
+    TEXT
+}
 
-    val order = listOf(
-        SelectorType.RESOURCE_ID,
-        SelectorType.CONTENT_DESC,
-        SelectorType.TEXT,
-        SelectorType.CLASS_NAME
-    )
+sealed class VerificationStrategy {
 
-    for (type in order) {
-        val value = selectors.firstOrNull { it.second == type }?.first ?: continue
+    object None : VerificationStrategy()
 
-        val node = when (type) {
-            SelectorType.RESOURCE_ID -> findNodeByResourceId(root, value)
-            SelectorType.CONTENT_DESC -> findNodeByContentDesc(root, value)
-            SelectorType.CLASS_NAME -> findNodeByClassName(root, value)
-            SelectorType.TEXT -> findNodeByText(root, value)
-        }
+    data class ScreenChanged(
+        val minHashDiff: Long = 50L
+    ) : VerificationStrategy()
 
-        if (node != null) {
-            candidates.add(node)
+    data class NodeExists(
+        val selector: String,
+        val selectorType: SelectorType = SelectorType.TEXT
+    ) : VerificationStrategy()
+
+    data class TextAppears(val text: String) : VerificationStrategy()
+
+    data class ElementDisappears(val selector: String) : VerificationStrategy()
+}
+
+data class RecordedStep(
+    val id: String,
+    val criteria: String,
+    val actionType: ActionType = ActionType.CLICK,
+
+    // 🎯 precision targeting
+    val targetClass: String? = null,
+    val targetDesc: String? = null,
+    val targetId: String? = null,
+
+    // 🔄 improved fallback system (IMPORTANT FIX)
+    val fallbackCriteria: List<Pair<String, SelectorType>> = emptyList(),
+
+    // ⚙️ execution control
+    val maxRetries: Int = 15,
+    val postActionDelayMs: Long = 200L,
+
+    // 🧠 behavior control
+    val isCritical: Boolean = false,
+    val adaptive: Boolean = true,
+
+    // ⚠️ NOTE: engine already uses fingerprint logic, so this is fallback only
+    val verificationStrategy: VerificationStrategy =
+        VerificationStrategy.ScreenChanged(100L)
+) {
+
+    fun getPrimarySelector(): Pair<String, SelectorType> {
+        return when {
+            !targetId.isNullOrEmpty() ->
+                targetId to SelectorType.RESOURCE_ID
+
+            !targetDesc.isNullOrEmpty() ->
+                targetDesc to SelectorType.CONTENT_DESC
+
+            !targetClass.isNullOrEmpty() ->
+                targetClass to SelectorType.CLASS_NAME
+
+            else ->
+                criteria to SelectorType.TEXT
         }
     }
 
-    // 🎯 pick best candidate (visible + clickable priority)
-    val best = candidates
-        .filter { it.isVisibleToUser }
-        .maxByOrNull { it.isClickable.toInt() }
-
-    candidates.filter { it != best }.forEach {
-        try { it.recycle() } catch (_: Exception) {}
+    fun getAllSelectors(): List<Pair<String, SelectorType>> {
+        val primary = getPrimarySelector()
+        return listOf(primary) + fallbackCriteria
     }
 
-    return best?.let { SafeNode.wrap(it, owned = true) }
+    fun requiresUiChangeVerification(): Boolean {
+        return when (actionType) {
+            ActionType.SCROLL,
+            ActionType.SWIPE -> true
+            else -> verificationStrategy is VerificationStrategy.ScreenChanged
+        }
+    }
 }
