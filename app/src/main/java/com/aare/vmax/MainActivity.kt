@@ -10,8 +10,6 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-
-// ✅ पुरानी बनी हुई PassengerData क्लास को ही इस्तेमाल करेंगे (Duplicate नहीं बनेगा)
 import com.aare.vmax.core.orchestrator.PassengerData
 
 class MainActivity : AppCompatActivity() {
@@ -50,21 +48,47 @@ class MainActivity : AppCompatActivity() {
     private fun initViews() {
         etTrainNumber = findViewById(R.id.etTrainNumber)
         etClass = findViewById(R.id.etClass)
+        
         etName1 = findViewById(R.id.etName1)
         etAge1 = findViewById(R.id.etAge1)
         etGender1 = findViewById(R.id.etGender1)
+        
         etName2 = findViewById(R.id.etName2)
         etAge2 = findViewById(R.id.etAge2)
         etGender2 = findViewById(R.id.etGender2)
+        
         etName3 = findViewById(R.id.etName3)
         etAge3 = findViewById(R.id.etAge3)
         etGender3 = findViewById(R.id.etGender3)
+        
         etName4 = findViewById(R.id.etName4)
         etAge4 = findViewById(R.id.etAge4)
         etGender4 = findViewById(R.id.etGender4)
+        
         btnSaveProfile = findViewById(R.id.btnSaveProfile)
         btnStartIrctc = findViewById(R.id.btnStartIrctc)
         tvProfileStatus = findViewById(R.id.tvProfileStatus)
+
+        // Gender Picker
+        setupGenderPicker(etGender1)
+        setupGenderPicker(etGender2)
+        setupGenderPicker(etGender3)
+        setupGenderPicker(etGender4)
+    }
+
+    private fun setupGenderPicker(editText: EditText) {
+        editText.isFocusable = false
+        editText.isFocusableInTouchMode = false
+        
+        editText.setOnClickListener {
+            val options = arrayOf("Male", "Female", "Transgender")
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Select Gender")
+                .setItems(options) { _, which ->
+                    editText.setText(options[which])
+                }
+                .show()
+        }
     }
     
     private fun loadSavedData() {
@@ -79,9 +103,15 @@ class MainActivity : AppCompatActivity() {
         loadPassengerData(3, etName4, etAge4, etGender4, prefs)
     }
     
-    private fun loadPassengerData(index: Int, nameView: EditText, ageView: EditText, genderView: EditText, prefs: SharedPreferences) {
+    private fun loadPassengerData(
+        index: Int, 
+        nameView: EditText, 
+        ageView: EditText, 
+        genderView: EditText, 
+        prefs: SharedPreferences
+    ) {
         nameView.setText(prefs.getString("name_$index", ""))
-        ageView.setText(prefs.getString("age_$index", "")) 
+        ageView.setText(prefs.getString("age_$index", ""))
         genderView.setText(prefs.getString("gender_$index", ""))
     }
     
@@ -103,7 +133,6 @@ class MainActivity : AppCompatActivity() {
             return
         }
         
-        // 💾 सेव करते ही Orchestrator खुद इसे पढ़ लेगा, किसी Holder की ज़रूरत नहीं!
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         with(prefs.edit()) {
             putString("train", trainNumber)
@@ -112,7 +141,7 @@ class MainActivity : AppCompatActivity() {
             
             passengerList.forEachIndexed { index, passenger ->
                 putString("name_$index", passenger.name)
-                putString("age_$index", passenger.age) 
+                putString("age_$index", passenger.age)
                 putString("gender_$index", passenger.gender)
             }
             apply()
@@ -131,13 +160,17 @@ class MainActivity : AppCompatActivity() {
         return passengers
     }
     
-    private fun addPassengerIfValid(list: MutableList<PassengerData>, nameView: EditText, ageView: EditText, genderView: EditText) {
+    private fun addPassengerIfValid(
+        list: MutableList<PassengerData>, 
+        nameView: EditText, 
+        ageView: EditText, 
+        genderView: EditText
+    ) {
         val name = nameView.text.toString().trim()
         val ageText = ageView.text.toString().trim()
         val gender = genderView.text.toString().trim()
         
         if (name.isNotEmpty() && ageText.isNotEmpty() && gender.isNotEmpty()) {
-            // ✅ Age को String में ही रखा है ताकि Orchestrator बिना क्रैश हुए पढ़ सके
             list.add(PassengerData(name, ageText, gender))
         }
     }
@@ -149,9 +182,8 @@ class MainActivity : AppCompatActivity() {
             return
         }
         
-        // ✅ स्मार्ट सर्विस चेकर (बिना Import एरर के)
         if (!isAccessibilityServiceEnabled()) {
-            tvProfileStatus.text = "⚠️ Enable Accessibility Service in Settings"
+            tvProfileStatus.text = "⚠️ Enable VMAX in Accessibility Settings"
             tvProfileStatus.setTextColor(getColor(android.R.color.holo_orange_dark))
             openAccessibilitySettings()
             return
@@ -164,8 +196,11 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun isAccessibilityServiceEnabled(): Boolean {
-        // पैकेज नाम से चेक करेगा, जिससे सर्विस का Import नहीं देना पड़ेगा
-        val enabledServices = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+        val enabledServices = Settings.Secure.getString(
+            contentResolver, 
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        )
+        // Check if our service is enabled (works even without importing the class)
         return enabledServices?.contains(packageName) == true
     }
     
@@ -176,9 +211,9 @@ class MainActivity : AppCompatActivity() {
     
     private fun openIrctcApp() {
         val irctcPackages = listOf(
-            "cris.org.in.prs.ima",
-            "com.irctc.railconnect",
-            "in.irctc.railconnect"
+            "cris.org.in.prs.ima",      // IRCTC Rail Connect
+            "com.irctc.railconnect",    // Old version
+            "in.irctc.railconnect"      // Alternative
         )
         
         var launched = false
@@ -191,7 +226,9 @@ class MainActivity : AppCompatActivity() {
                     tvProfileStatus.text = "🚂 IRCTC App Opened!"
                     break
                 }
-            } catch (e: Exception) { }
+            } catch (e: Exception) {
+                // Ignore and try next
+            }
         }
         
         if (!launched) {
