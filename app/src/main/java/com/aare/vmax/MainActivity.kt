@@ -1,235 +1,203 @@
 package com.aare.vmax
 
-import android.app.Activity
-import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
+import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
-import android.util.Log
-import android.view.Gravity
-import android.view.View
-import android.widget.*
+import android.widget.Button
+import android.widget.EditText
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
 
-class MainActivity : Activity() {
+// ✅ पुरानी बनी हुई PassengerData क्लास को ही इस्तेमाल करेंगे (Duplicate नहीं बनेगा)
+import com.aare.vmax.core.orchestrator.PassengerData
 
+class MainActivity : AppCompatActivity() {
+    
+    private lateinit var etTrainNumber: EditText
+    private lateinit var etClass: EditText
+    private lateinit var etName1: EditText
+    private lateinit var etAge1: EditText
+    private lateinit var etGender1: EditText
+    private lateinit var etName2: EditText
+    private lateinit var etAge2: EditText
+    private lateinit var etGender2: EditText
+    private lateinit var etName3: EditText
+    private lateinit var etAge3: EditText
+    private lateinit var etGender3: EditText
+    private lateinit var etName4: EditText
+    private lateinit var etAge4: EditText
+    private lateinit var etGender4: EditText
+    private lateinit var btnSaveProfile: Button
+    private lateinit var btnStartIrctc: Button
+    private lateinit var tvProfileStatus: TextView
+    
     companion object {
-        private const val TAG = "VMAX_Main"
-        private const val PREF_NAME = "VMaxProfile"
+        private const val PREFS_NAME = "VMaxProfile"
     }
-
-    private lateinit var etTrain: EditText
-    private lateinit var etName: EditText
-    private lateinit var etAge: EditText
-    private lateinit var btnPerm: Button
-    private lateinit var tvStatus: TextView
-
-    private val prefs by lazy { getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE) }
-
+    
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setupUI()
+        setContentView(R.layout.activity_main)
+        
+        initViews()
         loadSavedData()
-        checkServiceStatus()
+        setupClickListeners()
     }
-
-    override fun onResume() {
-        super.onResume()
-        updatePermissionButton()
-        checkServiceStatus()
+    
+    private fun initViews() {
+        etTrainNumber = findViewById(R.id.etTrainNumber)
+        etClass = findViewById(R.id.etClass)
+        etName1 = findViewById(R.id.etName1)
+        etAge1 = findViewById(R.id.etAge1)
+        etGender1 = findViewById(R.id.etGender1)
+        etName2 = findViewById(R.id.etName2)
+        etAge2 = findViewById(R.id.etAge2)
+        etGender2 = findViewById(R.id.etGender2)
+        etName3 = findViewById(R.id.etName3)
+        etAge3 = findViewById(R.id.etAge3)
+        etGender3 = findViewById(R.id.etGender3)
+        etName4 = findViewById(R.id.etName4)
+        etAge4 = findViewById(R.id.etAge4)
+        etGender4 = findViewById(R.id.etGender4)
+        btnSaveProfile = findViewById(R.id.btnSaveProfile)
+        btnStartIrctc = findViewById(R.id.btnStartIrctc)
+        tvProfileStatus = findViewById(R.id.tvProfileStatus)
     }
-
-    // ================= UI =================
-
-    private fun setupUI() {
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#1E1E1E"))
-            setPadding(40, 60, 40, 60)
-        }
-
-        layout.addView(TextView(this).apply {
-            text = "🚀 AARE-PRO vMAX 2.1"
-            textSize = 24f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 40)
-        })
-
-        tvStatus = TextView(this).apply {
-            text = "🔴 Service: Not Ready"
-            setTextColor(Color.parseColor("#FF6B6B"))
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 30)
-        }
-        layout.addView(tvStatus)
-
-        etTrain = createInput("🚂 Train Number", "")
-        etName = createInput("👤 Passenger Name", "")
-        etAge = createInput("🎂 Age", "").apply {
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
-        }
-
-        layout.addView(etTrain)
-        layout.addView(etName)
-        layout.addView(etAge)
-
-        val btnSave = Button(this).apply {
-            text = "💾 Save Profile"
-            setBackgroundColor(Color.parseColor("#5E35B1"))
-            setTextColor(Color.WHITE)
-            setOnClickListener { saveProfile() }
-        }
-        layout.addView(btnSave)
-
-        val btnClear = Button(this).apply {
-            text = "🗑️ Clear All Data"
-            setBackgroundColor(Color.parseColor("#424242"))
-            setTextColor(Color.LTGRAY)
-            setOnClickListener { clearProfile() }
-        }
-        layout.addView(btnClear)
-
-        layout.addView(View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 30
-            )
-        })
-
-        btnPerm = Button(this).apply {
-            text = "⚙️ Setup Permissions"
-            setBackgroundColor(Color.parseColor("#D32F2F"))
-            setTextColor(Color.WHITE)
-            setOnClickListener { handlePermissionFlow() }
-        }
-        layout.addView(btnPerm)
-
-        setContentView(layout)
+    
+    private fun loadSavedData() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        
+        etTrainNumber.setText(prefs.getString("train", ""))
+        etClass.setText(prefs.getString("class", "SL"))
+        
+        loadPassengerData(0, etName1, etAge1, etGender1, prefs)
+        loadPassengerData(1, etName2, etAge2, etGender2, prefs)
+        loadPassengerData(2, etName3, etAge3, etGender3, prefs)
+        loadPassengerData(3, etName4, etAge4, etGender4, prefs)
     }
-
-    private fun createInput(hint: String, value: String?): EditText {
-        return EditText(this).apply {
-            this.hint = hint
-            setText(value)
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.GRAY)
-            setBackgroundColor(Color.parseColor("#2C2C2C"))
-            setPadding(30, 25, 30, 25)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                setMargins(0, 0, 0, 20)
-            }
-        }
+    
+    private fun loadPassengerData(index: Int, nameView: EditText, ageView: EditText, genderView: EditText, prefs: SharedPreferences) {
+        nameView.setText(prefs.getString("name_$index", ""))
+        ageView.setText(prefs.getString("age_$index", "")) 
+        genderView.setText(prefs.getString("gender_$index", ""))
     }
-
-    // ================= DATA =================
-
+    
+    private fun setupClickListeners() {
+        btnSaveProfile.setOnClickListener { saveProfile() }
+        btnStartIrctc.setOnClickListener { startIrctcAutomation() }
+    }
+    
     private fun saveProfile() {
-        val train = etTrain.text.toString().trim()
-        val name = etName.text.toString().trim()
-        val age = etAge.text.toString().trim().toIntOrNull()
-
-        if (train.isEmpty() || name.isEmpty() || age == null) {
-            toast("⚠️ Enter valid details")
+        val trainNumber = etTrainNumber.text.toString().trim()
+        if (trainNumber.isEmpty()) {
+            tvProfileStatus.text = "❌ Please enter Train Number"
             return
         }
-
-        prefs.edit()
-            .putString("train", train)
-            .putString("name", name)
-            .putInt("age", age)
-            .apply()
-
-        toast("✅ Saved")
-    }
-
-    private fun loadSavedData() {
-        etTrain.setText(prefs.getString("train", "12487"))
-        etName.setText(prefs.getString("name", "Md Ilahi"))
-        etAge.setText(prefs.getInt("age", 27).toString())
-    }
-
-    private fun clearProfile() {
-        AlertDialog.Builder(this)
-            .setTitle("Clear Data?")
-            .setMessage("All data will be deleted")
-            .setPositiveButton("Yes") { _, _ ->
-                prefs.edit().clear().apply()
-                loadSavedData()
-                toast("🗑️ Cleared")
+        
+        val passengerList = getPassengersList()
+        if (passengerList.isEmpty()) {
+            tvProfileStatus.text = "❌ Add at least 1 passenger"
+            return
+        }
+        
+        // 💾 सेव करते ही Orchestrator खुद इसे पढ़ लेगा, किसी Holder की ज़रूरत नहीं!
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        with(prefs.edit()) {
+            putString("train", trainNumber)
+            putString("class", etClass.text.toString().trim().ifEmpty { "SL" })
+            putInt("passenger_count", passengerList.size)
+            
+            passengerList.forEachIndexed { index, passenger ->
+                putString("name_$index", passenger.name)
+                putString("age_$index", passenger.age) 
+                putString("gender_$index", passenger.gender)
             }
-            .setNegativeButton("No", null)
-            .show()
+            apply()
+        }
+        
+        tvProfileStatus.text = "✅ Saved! ${passengerList.size} passenger(s)"
+        tvProfileStatus.setTextColor(getColor(android.R.color.holo_green_dark))
     }
-
-    // ================= PERMISSIONS =================
-
-    private fun handlePermissionFlow() {
-        when {
-            !Settings.canDrawOverlays(this) -> {
-                startActivity(
-                    Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName")
-                    )
-                )
-            }
-
-            !isAccessibilityEnabled() -> {
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                toast("Enable VMAX Service")
-            }
-
-            else -> toast("✅ All permissions granted")
+    
+    private fun getPassengersList(): MutableList<PassengerData> {
+        val passengers = mutableListOf<PassengerData>()
+        addPassengerIfValid(passengers, etName1, etAge1, etGender1)
+        addPassengerIfValid(passengers, etName2, etAge2, etGender2)
+        addPassengerIfValid(passengers, etName3, etAge3, etGender3)
+        addPassengerIfValid(passengers, etName4, etAge4, etGender4)
+        return passengers
+    }
+    
+    private fun addPassengerIfValid(list: MutableList<PassengerData>, nameView: EditText, ageView: EditText, genderView: EditText) {
+        val name = nameView.text.toString().trim()
+        val ageText = ageView.text.toString().trim()
+        val gender = genderView.text.toString().trim()
+        
+        if (name.isNotEmpty() && ageText.isNotEmpty() && gender.isNotEmpty()) {
+            // ✅ Age को String में ही रखा है ताकि Orchestrator बिना क्रैश हुए पढ़ सके
+            list.add(PassengerData(name, ageText, gender))
         }
     }
-
-    private fun isAccessibilityEnabled(): Boolean {
-        val expected = "$packageName/${com.aare.vmax.core.service.VMaxAccessibilityService::class.java.name}"
-        val enabled = Settings.Secure.getString(
-            contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: ""
-
-        return enabled.split(":").any { it.equals(expected, true) }
-    }
-
-    private fun updatePermissionButton() {
-        when {
-            !Settings.canDrawOverlays(this) -> {
-                btnPerm.text = "❌ Allow Overlay"
-                btnPerm.setBackgroundColor(Color.RED)
-            }
-
-            !isAccessibilityEnabled() -> {
-                btnPerm.text = "⚙️ Enable Accessibility"
-                btnPerm.setBackgroundColor(Color.YELLOW)
-            }
-
-            else -> {
-                btnPerm.text = "✅ Ready"
-                btnPerm.setBackgroundColor(Color.GREEN)
-            }
+    
+    private fun startIrctcAutomation() {
+        val trainNumber = etTrainNumber.text.toString().trim()
+        if (trainNumber.isEmpty()) {
+            tvProfileStatus.text = "❌ Please save profile first!"
+            return
         }
-    }
-
-    private fun checkServiceStatus() {
-        val ready = isAccessibilityEnabled() && Settings.canDrawOverlays(this)
-
-        if (ready) {
-            tvStatus.text = "🟢 Ready"
-            tvStatus.setTextColor(Color.GREEN)
-        } else {
-            tvStatus.text = "🔴 Not Ready"
-            tvStatus.setTextColor(Color.RED)
+        
+        // ✅ स्मार्ट सर्विस चेकर (बिना Import एरर के)
+        if (!isAccessibilityServiceEnabled()) {
+            tvProfileStatus.text = "⚠️ Enable Accessibility Service in Settings"
+            tvProfileStatus.setTextColor(getColor(android.R.color.holo_orange_dark))
+            openAccessibilitySettings()
+            return
         }
+        
+        tvProfileStatus.text = "🚀 Opening IRCTC..."
+        tvProfileStatus.setTextColor(getColor(android.R.color.holo_orange_dark))
+        
+        openIrctcApp()
     }
-
-    private fun toast(msg: String) {
-        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        // पैकेज नाम से चेक करेगा, जिससे सर्विस का Import नहीं देना पड़ेगा
+        val enabledServices = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+        return enabledServices?.contains(packageName) == true
+    }
+    
+    private fun openAccessibilitySettings() {
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+        startActivity(intent)
+    }
+    
+    private fun openIrctcApp() {
+        val irctcPackages = listOf(
+            "cris.org.in.prs.ima",
+            "com.irctc.railconnect",
+            "in.irctc.railconnect"
+        )
+        
+        var launched = false
+        for (pkg in irctcPackages) {
+            try {
+                val intent = packageManager.getLaunchIntentForPackage(pkg)
+                if (intent != null) {
+                    startActivity(intent)
+                    launched = true
+                    tvProfileStatus.text = "🚂 IRCTC App Opened!"
+                    break
+                }
+            } catch (e: Exception) { }
+        }
+        
+        if (!launched) {
+            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.irctc.co.in"))
+            startActivity(webIntent)
+            tvProfileStatus.text = "🌐 Opening IRCTC Website"
+        }
     }
 }
