@@ -14,25 +14,43 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
+import java.util.Calendar
 
 class VMAXAccessibilityService : AccessibilityService() {
 
+    // ═══════════════════════════════════════════════════════
+    // ⚙️ CONSTANTS & CONFIG
+    // ═══════════════════════════════════════════════════════
     companion object {
         private const val TAG = "VMAX_SERVICE"
-        private const val ACTION_START = "com.aare.vmax.ACTION_START_AUTOMATION"
         private const val PREFS_NAME = "VMaxProfile"
+        private const val ACTION_START = "com.aare.vmax.ACTION_START_AUTOMATION"
         
-        // ⚙️ Timing & Safety Constants
+        // Timing & Safety
         private const val CLICK_DEBOUNCE_MS = 300L
         private const val MAX_RETRIES = 3
         private const val RETRY_DELAY_MS = 1000L
         private const val DEFAULT_LATENCY_MS = 400
+        private const val MIN_LATENCY_MS = 50
+        private const val MAX_LATENCY_MS = 2000
     }
 
+    // ═══════════════════════════════════════════════════════
+    // 🧠 STATE MACHINE
+    // ═══════════════════════════════════════════════════════
+    enum class AutomationStep {
+        IDLE, WAITING_FOR_DASHBOARD, TRAIN_SEARCH,
+        PASSENGER_FORM, ADVANCED_OPTIONS,
+        REVIEW_CLICKED, PAYMENT_PAGE, COMPLETED, ERROR
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // 🔧 CORE VARIABLES
+    // ═══════════════════════════════════════════════════════
     private lateinit var prefs: SharedPreferences
     private val scope = CoroutineScope(Dispatchers.Main + Job())
     
-    // 🧠 State Machine
+    // Runtime State
     private var isBotActive = false
     private var automationStep = AutomationStep.IDLE
     private var passengersProcessed = 0
@@ -41,37 +59,28 @@ class VMAXAccessibilityService : AccessibilityService() {
     private var lastActionTime = 0L
     private var captchaPaused = false
     private var hasClickedReview = false
+    private var isCurrentlyFilling = false
 
-    enum class AutomationStep {
-        IDLE, WAITING_FOR_DASHBOARD, TRAIN_SEARCH, 
-        PASSENGER_FORM, ADVANCED_OPTIONS, 
-        REVIEW_CLICKED, PAYMENT_PAGE, COMPLETED, ERROR
-    }
-    // 📡 Broadcast Receiver for START command
+    // ═══════════════════════════════════════════════════════
+    // 📡 BROADCAST RECEIVER (START Command)
+    // ═══════════════════════════════════════════════════════
     private val commandReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == ACTION_START) {
-                resetAutomation()
-                totalPassengers = intent.getIntExtra("passenger_count", 
-                    prefs.getInt("passenger_count", 1))
-                isBotActive = true
-                automationStep = AutomationStep.WAITING_FOR_DASHBOARD
-                showToast("🤖 VMAX Active! Waiting for IRCTC... ($totalPassengers passenger)")
-                Log.d(TAG, "Automation started: $totalPassengers passenger(s)")
+                startAutomation(intent)
             }
         }
     }
 
     // ═══════════════════════════════════════════════════════
-    // 🔄 LIFECYCLE
+    // 🔄 LIFECYCLE METHODS
     // ═══════════════════════════════════════════════════════
-
     override fun onServiceConnected() {
         super.onServiceConnected()
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         configureService()
         registerReceiver()
-        Log.d(TAG, "✅ Service connected & ready")
+        Log.d(TAG, "✅ VMAX Service Connected & Ready")
     }
 
     private fun configureService() {
@@ -86,7 +95,7 @@ class VMAXAccessibilityService : AccessibilityService() {
             notificationTimeout = 100
             packageNames = arrayOf(
                 "cris.org.in.prs.ima",
-                "com.irctc.railconnect", 
+                "com.irctc.railconnect",
                 "in.irctc.railconnect"
             )
         }
@@ -95,8 +104,9 @@ class VMAXAccessibilityService : AccessibilityService() {
     private fun registerReceiver() {
         val filter = IntentFilter(ACTION_START)
         ContextCompat.registerReceiver(
-            this, 
-            commandReceiver,             filter, 
+            this,
+            commandReceiver,
+            filter,
             ContextCompat.RECEIVER_EXPORTED
         )
     }
@@ -107,7 +117,7 @@ class VMAXAccessibilityService : AccessibilityService() {
         
         // ✅ Debounce: Prevent rapid duplicate actions
         val now = System.currentTimeMillis()
-        if (now - lastActionTime < CLICK_DEBOUNCE_MS) return
+        if (now - lastActionTime < CLICK_DEBOUNCE_MS && !isCurrentlyFilling) return
 
         val root = rootInActiveWindow ?: return
         
@@ -141,11 +151,28 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     // ═══════════════════════════════════════════════════════
+    // 🚀 START AUTOMATION (Called via Broadcast)
+    // ═══════════════════════════════════════════════════════
+    private fun startAutomation(intent: Intent) {
+        resetAutomation()
+        
+        totalPassengers = intent.getIntExtra("passengers", 
+            prefs.getInt("passenger_count", 1)).coerceIn(1, 6)
+        
+        isBotActive = true
+        automationStep = AutomationStep.WAITING_FOR_DASHBOARD
+        
+        showToast("🤖 VMAX Active! Target: $totalPassengers passenger(s)")
+        Log.d(TAG, "🚀 Automation started: $totalPassengers passenger(s)")
+    }
+
+    // ═══════════════════════════════════════════════════════
     // 🧭 STATE HANDLERS (The Brain Logic)
     // ═══════════════════════════════════════════════════════
 
     private fun handleDashboard(root: AccessibilityNodeInfo) {
-        // 🚨 Popup Killer: Remove concession/OK popups        if (findNodeByText(root, "OK")?.let { node ->
+        // 🚨 Popup Killer: Remove concession/OK popups
+        if (findNodeByText(root, "OK")?.let { node ->
                 node.parent?.text?.toString()?.contains("concession", ignoreCase = true) == true
             } == true) {
             clickByText(root, "OK", "🎯 Popup killed")
@@ -170,81 +197,102 @@ class VMAXAccessibilityService : AccessibilityService() {
             handleError("Invalid train number")
             return
         }
-
-        // 🔍 Find train in search results
-        val trainNode = findNodeByTextContains(root, trainNum)
-        if (trainNode != null) {
-            val targetClass = prefs.getString("class", "SL") ?: "SL"
-            if (clickByContentDesc(root, targetClass, "🎯 Class: $targetClass")) {
-                automationStep = AutomationStep.PASSENGER_FORM
-                passengersProcessed = 0
-                retryCount = 0
-                Log.d(TAG, "Train selected → Passenger Form")
+        
+        // ⏱️ Sniper Timing: Wait for exact opening second
+        val targetClass = prefs.getString("class", "SL") ?: "SL"
+        if (!hasClickedRefresh && !shouldWaitForSniperTime(targetClass)) {
+            // 🔍 Find train in search results
+            val trainNode = findNodeByTextContains(root, trainNum)
+            if (trainNode != null) {
+                if (clickByContentDesc(root, targetClass, "🎯 Class: $targetClass")) {
+                    automationStep = AutomationStep.PASSENGER_FORM
+                    passengersProcessed = 0
+                    hasClickedRefresh = true
+                    retryCount = 0
+                    Log.d(TAG, "Train selected → Passenger Form")
+                } else {
+                    handleRetry("Class selection")
+                }
             } else {
-                handleRetry("Class selection")
-            }
-        } else {
-            // 🔄 Refresh if train not found
-            if (clickByText(root, "Refresh", "🔄 Refreshing results")) {
-                Log.d(TAG, "Refreshed train list")
-            } else {
-                handleRetry("Train search")
+                // 🔄 Refresh if train not found
+                if (clickByText(root, "Refresh", "🔄 Refreshing results")) {
+                    Log.d(TAG, "Refreshed train list")
+                } else {
+                    handleRetry("Train search")
+                }
             }
         }
     }
 
+    private fun shouldWaitForSniperTime(targetClass: String): Boolean {
+        val cal = Calendar.getInstance()
+        val hour = cal.get(Calendar.HOUR_OF_DAY)
+        val minute = cal.get(Calendar.MINUTE)
+        
+        val isAC = targetClass in listOf("1A", "2A", "3A", "3E", "CC", "EC")
+        val targetHour = if (isAC) 10 else 11  // AC Tatkal: 10 AM, SL Tatkal: 11 AM
+        
+        // Wait quietly in the last 5 minutes before opening
+        return hour == targetHour - 1 && minute >= 55
+    }
+
     private fun handlePassengerForm(root: AccessibilityNodeInfo) {
-        // ✅ Smart: Find editable Name field (works for any passenger index)        val nameField = findEditableNodeByHint(root, "Name") 
+        // ✅ Smart: Find editable Name field
+        val nameField = findEditableNodeByHint(root, "Name") 
                      ?: findEditableNodeByText(root, "Name")
         
         if (nameField != null) {
-            fillCurrentPassenger(root)
+            if (!isCurrentlyFilling && passengersProcessed < totalPassengers) {
+                fillCurrentPassenger(root, nameField)
+            }
         } else if (clickByContentDesc(root, "PASSENGER DETAILS", "🎯 Opening passenger section")) {
-            // Expand passenger section if collapsed
             Log.d(TAG, "Clicked PASSENGER DETAILS")
         } else if (passengersProcessed == 0) {
             handleRetry("Passenger form detection")
         }
     }
 
-    private fun fillCurrentPassenger(root: AccessibilityNodeInfo) {
-        val index = passengersProcessed.coerceIn(0, 3) // Support up to 4 passengers
+    private fun fillCurrentPassenger(root: AccessibilityNodeInfo, nameField: AccessibilityNodeInfo) {
+        isCurrentlyFilling = true
+        val index = passengersProcessed.coerceIn(0, 5)  // Support up to 6 passengers
         
         val name = prefs.getString("name_$index", "") ?: ""
         val age = prefs.getString("age_$index", "") ?: "0"
         val gender = prefs.getString("gender_$index", "Male") ?: "Male"
         val meal = prefs.getString("meal_$index", "No Food") ?: "No Food"
+        val latency = prefs.getInt("latency_ms", DEFAULT_LATENCY_MS)
+            .coerceIn(MIN_LATENCY_MS, MAX_LATENCY_MS).toLong()
 
         if (name.isEmpty()) {
             // Skip empty passenger slots
             passengersProcessed++
             checkAllPassengersDone()
+            isCurrentlyFilling = false
             return
         }
 
         scope.launch {
             try {
                 // 📝 Fill Name
-                findEditableNodeByHint(root, "Name")?.let { 
-                    inputText(it, name, "📝 P${index+1}: Name")
-                    delay(200)
-                }
+                inputText(nameField, name, "📝 P${index+1}: Name")
+                delay(latency)
 
                 // 🔢 Fill Age
                 findEditableNodeByHint(root, "Age")?.let {
                     inputText(it, age, "🔢 P${index+1}: Age")
-                    delay(200)
+                    delay(latency)
                 }
 
                 // 👤 Select Gender
                 clickByContentDesc(root, gender, "👤 P${index+1}: Gender")
-                delay(150)
+                delay(latency / 2)
 
                 // 🍴 Smart Meal Selection (Skip if "No Food")
                 if (meal != "No Food" && meal.isNotEmpty()) {
                     if (clickByContentDesc(root, "Meal Preference", "🍴 Opening meal options")) {
-                        delay(300)                        clickByContentDesc(root, meal, "🍴 P${index+1}: $meal")
-                        delay(200)
+                        delay(300)  // Wait for dropdown
+                        clickByContentDesc(root, meal, "🍴 P${index+1}: $meal")
+                        delay(latency / 2)
                     }
                 }
 
@@ -256,19 +304,18 @@ class VMAXAccessibilityService : AccessibilityService() {
                 if (passengersProcessed < totalPassengers) {
                     if (clickByText(root, "Add Passenger", "➕ Adding next passenger") ||
                         clickByText(root, "+ Add New", "➕ Adding next passenger")) {
-                        delay(500)
-                        // Wait for next form to load
-                    } else {
-                        // Fallback: Try to continue anyway
-                        checkAllPassengersDone()
+                        delay(500)  // Wait for next form to load
                     }
-                } else {
-                    checkAllPassengersDone()
                 }
+                
+                checkAllPassengersDone()
 
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Fill passenger error: ${e.message}", e)
                 handleError("Passenger fill failed")
+            } finally {
+                isCurrentlyFilling = false
+                lastActionTime = System.currentTimeMillis()
             }
         }
     }
@@ -293,6 +340,7 @@ class VMAXAccessibilityService : AccessibilityService() {
             clickByContentDesc(root, "Book only if confirm berths", "✅ Confirm-only enabled")
             delayAction(100)
         }
+
         // 🚀 Click Review Journey
         if (clickByContentDesc(root, "REVIEW JOURNEY", "🚀 Review Journey clicked") ||
             clickByContentDesc(root, "REVIEW", "🚀 Review clicked") ||
@@ -310,7 +358,6 @@ class VMAXAccessibilityService : AccessibilityService() {
 
     private fun handleReviewStage(root: AccessibilityNodeInfo) {
         // 🔍 Detect if user has solved CAPTCHA and continued
-        // Look for payment page indicators
         if (findNodeByTextContains(root, "PAYMENT") != null ||
             findNodeByTextContains(root, "SELECT A PAYMENT") != null ||
             findNodeByText(root, "MAKE PAYMENT") != null) {
@@ -324,6 +371,8 @@ class VMAXAccessibilityService : AccessibilityService() {
 
     private fun handlePaymentPage(root: AccessibilityNodeInfo) {
         val payMethod = prefs.getString("payment_method", "PhonePe") ?: "PhonePe"
+        val latency = prefs.getInt("latency_ms", DEFAULT_LATENCY_MS)
+            .coerceIn(MIN_LATENCY_MS, MAX_LATENCY_MS).toLong()
         
         scope.launch {
             try {
@@ -335,21 +384,25 @@ class VMAXAccessibilityService : AccessibilityService() {
                     payMethod.contains("UPI", true) || payMethod.contains("PhonePe", true) || 
                     payMethod.contains("Paytm", true) || payMethod.contains("GPay", true) -> {
                         clickByContentDesc(root, "BHIM", "💸 UPI tab")
-                        delay(200)
+                        delay(latency)
                         clickByContentDesc(root, "UPI", "💸 UPI option")
                     }
                     else -> {
                         clickByContentDesc(root, "BHIM", "💸 Default UPI tab")
                     }
-                }                delay(300)
+                }
+                delay(latency)
 
                 // 🎯 Select Specific Payment App
                 clickByContentDesc(root, payMethod, "🎯 Payment app: $payMethod")
-                delay(400)
+                delay(latency * 2)
 
                 // 🔥 FINAL STRIKE: Click Pay ₹ button
                 if (findNodeByTextContains(root, "Pay ₹")?.let { 
                         clickNode(it, "🔥 FINAL STRIKE: Payment initiated!"); true 
+                    } == true ||
+                    findNodeByTextContains(root, "PROCEED TO PAY")?.let {
+                        clickNode(it, "🔥 FINAL STRIKE: Proceed to Pay!"); true
                     } == true) {
                     
                     automationStep = AutomationStep.COMPLETED
@@ -391,6 +444,7 @@ class VMAXAccessibilityService : AccessibilityService() {
             (node.isClickable || node.parent?.isClickable == true)
         }
     }
+
     private fun findEditableNodeByHint(root: AccessibilityNodeInfo, hint: String): AccessibilityNodeInfo? {
         return traverseAndFind(root) { node ->
             node.isEditable && (
@@ -414,13 +468,13 @@ class VMAXAccessibilityService : AccessibilityService() {
         if (node == null) return null
         
         if (predicate(node)) {
-            return AccessibilityNodeInfo.obtain(node) // Safe copy
+            return AccessibilityNodeInfo.obtain(node)  // Safe copy
         }
         
         for (i in 0 until node.childCount) {
             val child = node.getChild(i)
             val found = traverseAndFind(child, predicate)
-            child?.recycle() // ✅ Critical: Prevent memory leaks
+            child?.recycle()  // ✅ Critical: Prevent memory leaks
             if (found != null) return found
         }
         return null
@@ -439,7 +493,8 @@ class VMAXAccessibilityService : AccessibilityService() {
     }
 
     private fun clickNode(node: AccessibilityNodeInfo, logMsg: String): Boolean {
-        return try {            var target: AccessibilityNodeInfo? = node
+        return try {
+            var target: AccessibilityNodeInfo? = node
             while (target != null) {
                 if (target.isClickable) {
                     val success = target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
@@ -516,6 +571,7 @@ class VMAXAccessibilityService : AccessibilityService() {
         retryCount = 0
         captchaPaused = false
         hasClickedReview = false
+        isCurrentlyFilling = false
         lastActionTime = 0
         Log.d(TAG, "🔄 Automation reset")
     }
@@ -523,7 +579,6 @@ class VMAXAccessibilityService : AccessibilityService() {
     // ═══════════════════════════════════════════════════════
     // 📢 USER FEEDBACK
     // ═══════════════════════════════════════════════════════
-
     private fun showToast(message: String) {
         scope.launch {
             try {
