@@ -40,10 +40,10 @@ data class CausalFingerprint(
     }
 }
 
-class NodeHandle(private val node: AccessibilityNodeInfo?) {
-    private var consumed = false
+// 👇 यहाँ से 'private' हटा दिया गया है
+class NodeHandle(val node: AccessibilityNodeInfo?) {
+    var consumed = false
     
-    // 👇 बदलाव 1: यहाँ 'inline' लगा दिया गया है ताकि suspend/delay काम करे
     inline fun <T> use(block: (AccessibilityNodeInfo) -> T): T? {
         if (consumed || node == null) return null
         return try {
@@ -521,7 +521,6 @@ class WorkflowEngine(
         return target
     }
 
-    // 👇 बदलाव 2: ClassName से नोड ढूँढने का सही तरीका
     private fun findNodeByClassName(root: AccessibilityNodeInfo, cls: String): AccessibilityNodeInfo? {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.addLast(root)
