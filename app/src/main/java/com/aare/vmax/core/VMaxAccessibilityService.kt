@@ -11,359 +11,402 @@ import android.os.Bundle
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
-import java.util.*
 
 class VMAXAccessibilityService : AccessibilityService() {
 
-    // ═══════════════════════════════════════════════════════
-    // ⚙️ STATE & CONFIG
-    // ═══════════════════════════════════════════════════════
-    private lateinit var prefs: SharedPreferences
-    private var automationState = AutomationState.IDLE
-    private var isRunning = false
-    private var serviceJob: Job? = null
-    private val scope = CoroutineScope(Dispatchers.Main + Job())
-    private var retryCount = 0
-    private val MAX_RETRIES = 3
-    private var lastClickTime = 0L
-    private val CLICK_DEBOUNCE_MS = 500L
+    companion object {
+        private const val TAG = "VMAX_SERVICE"
+        private const val ACTION_START = "com.aare.vmax.ACTION_START_AUTOMATION"
+        private const val PREFS_NAME = "VMaxProfile"
+        
+        // ⚙️ Timing & Safety Constants
+        private const val CLICK_DEBOUNCE_MS = 300L
+        private const val MAX_RETRIES = 3
+        private const val RETRY_DELAY_MS = 1000L
+        private const val DEFAULT_LATENCY_MS = 400
+    }
 
+    private lateinit var prefs: SharedPreferences
+    private val scope = CoroutineScope(Dispatchers.Main + Job())
+    
+    // 🧠 State Machine
+    private var isBotActive = false
+    private var automationStep = AutomationStep.IDLE
+    private var passengersProcessed = 0
+    private var totalPassengers = 1
+    private var retryCount = 0
+    private var lastActionTime = 0L
+    private var captchaPaused = false
+    private var hasClickedReview = false
+
+    enum class AutomationStep {
+        IDLE, WAITING_FOR_DASHBOARD, TRAIN_SEARCH, 
+        PASSENGER_FORM, ADVANCED_OPTIONS, 
+        REVIEW_CLICKED, PAYMENT_PAGE, COMPLETED, ERROR
+    }
+    // 📡 Broadcast Receiver for START command
     private val commandReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                ACTION_START_AUTOMATION -> startAutomation()
-                ACTION_STOP_AUTOMATION -> stopAutomation()
+            if (intent?.action == ACTION_START) {
+                resetAutomation()
+                totalPassengers = intent.getIntExtra("passenger_count", 
+                    prefs.getInt("passenger_count", 1))
+                isBotActive = true
+                automationStep = AutomationStep.WAITING_FOR_DASHBOARD
+                showToast("🤖 VMAX Active! Waiting for IRCTC... ($totalPassengers passenger)")
+                Log.d(TAG, "Automation started: $totalPassengers passenger(s)")
             }
         }
     }
 
-    enum class AutomationState {
-        IDLE, DASHBOARD, JOURNEY_DETAILS, TRAIN_SEARCH, 
-        PASSENGER_DETAILS, COMPLETED, PAUSED_ERROR
-    }
+    // ═══════════════════════════════════════════════════════
+    // 🔄 LIFECYCLE
+    // ═══════════════════════════════════════════════════════
 
-    companion object {
-        const val ACTION_START_AUTOMATION = "com.aare.vmax.ACTION_START_AUTOMATION"
-        const val ACTION_STOP_AUTOMATION = "com.aare.vmax.ACTION_STOP_AUTOMATION"
-        const val SERVICE_CLASS_NAME = "com.aare.vmax.VMAXAccessibilityService"    }
-    
     override fun onServiceConnected() {
         super.onServiceConnected()
-        prefs = getSharedPreferences("VMaxProfile", Context.MODE_PRIVATE)
+        prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         configureService()
-        registerCommandReceiver()
-        logD("🛡️ VMAX Service Connected & Ready")
+        registerReceiver()
+        Log.d(TAG, "✅ Service connected & ready")
     }
 
     private fun configureService() {
-        val info = AccessibilityServiceInfo().apply {
+        serviceInfo = AccessibilityServiceInfo().apply {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
-                         AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED or
-                         AccessibilityEvent.TYPE_VIEW_CLICKED
+                        AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED or
+                        AccessibilityEvent.TYPE_VIEW_CLICKED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             flags = AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
-                    AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
-                    AccessibilityServiceInfo.FLAG_REQUEST_ENHANCED_WEB_ACCESSIBILITY
-            notificationTimeout = 50
+                   AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
+                   AccessibilityServiceInfo.FLAG_REQUEST_ENHANCED_WEB_ACCESSIBILITY
+            notificationTimeout = 100
             packageNames = arrayOf(
                 "cris.org.in.prs.ima",
-                "com.irctc.railconnect",
+                "com.irctc.railconnect", 
                 "in.irctc.railconnect"
             )
         }
-        serviceInfo = info
     }
 
-    private fun registerCommandReceiver() {
-        val filter = IntentFilter().apply {
-            addAction(ACTION_START_AUTOMATION)
-            addAction(ACTION_STOP_AUTOMATION)
-        }
-        ContextCompat.registerReceiver(this, commandReceiver, filter, ContextCompat.RECEIVER_EXPORTED)
+    private fun registerReceiver() {
+        val filter = IntentFilter(ACTION_START)
+        ContextCompat.registerReceiver(
+            this, 
+            commandReceiver,             filter, 
+            ContextCompat.RECEIVER_EXPORTED
+        )
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (!isRunning || event == null) return
+        if (!isBotActive || event == null || captchaPaused) return
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        
+        // ✅ Debounce: Prevent rapid duplicate actions
+        val now = System.currentTimeMillis()
+        if (now - lastActionTime < CLICK_DEBOUNCE_MS) return
 
-        when (automationState) {
-            AutomationState.DASHBOARD -> checkAndClickDashboard()
-            AutomationState.JOURNEY_DETAILS -> handleJourneyDetails()
-            AutomationState.TRAIN_SEARCH -> handleTrainSelection()
-            AutomationState.PASSENGER_DETAILS -> fillPassengerDetails()
-            AutomationState.PAUSED_ERROR -> handleCaptchaOrError()
-            else -> {}
+        val root = rootInActiveWindow ?: return
+        
+        try {
+            when (automationStep) {
+                AutomationStep.WAITING_FOR_DASHBOARD -> handleDashboard(root)
+                AutomationStep.TRAIN_SEARCH -> handleTrainSearch(root)
+                AutomationStep.PASSENGER_FORM -> handlePassengerForm(root)
+                AutomationStep.ADVANCED_OPTIONS -> handleAdvancedOptions(root)
+                AutomationStep.REVIEW_CLICKED -> handleReviewStage(root)
+                AutomationStep.PAYMENT_PAGE -> handlePaymentPage(root)
+                else -> {}
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Event handling error: ${e.message}", e)
+            handleError("Processing failed: ${e.message?.take(30)}")
         }
     }
+
     override fun onInterrupt() {
-        stopAutomation()
+        resetAutomation()
+        Log.d(TAG, "⚠️ Service interrupted")
     }
 
     override fun onDestroy() {
         super.onDestroy()
         try { unregisterReceiver(commandReceiver) } catch (e: Exception) {}
-        serviceJob?.cancel()
-        logD("🔌 Service Destroyed")
+        scope.cancel()
+        resetAutomation()
+        Log.d(TAG, "🔌 Service destroyed")
     }
 
     // ═══════════════════════════════════════════════════════
-    // 🚀 START/STOP COMMANDS
+    // 🧭 STATE HANDLERS (The Brain Logic)
     // ═══════════════════════════════════════════════════════
-    
-    private fun startAutomation() {
-        if (isRunning) {
-            logD("⚠️ Already running")
+
+    private fun handleDashboard(root: AccessibilityNodeInfo) {
+        // 🚨 Popup Killer: Remove concession/OK popups        if (findNodeByText(root, "OK")?.let { node ->
+                node.parent?.text?.toString()?.contains("concession", ignoreCase = true) == true
+            } == true) {
+            clickByText(root, "OK", "🎯 Popup killed")
             return
         }
-        isRunning = true
-        automationState = AutomationState.DASHBOARD
-        retryCount = 0
-        logD("🚀 Automation Started - State: DASHBOARD")
-    }
 
-    private fun stopAutomation() {
-        isRunning = false
-        automationState = AutomationState.IDLE
-        serviceJob?.cancel()
-        retryCount = 0
-        logD("🛑 Automation Stopped")
-    }
-
-    // ═══════════════════════════════════════════════════════
-    // 🧭 STATE HANDLERS (WITH DEBOUNCE & STATE PRE-SWITCH)
-    // ═══════════════════════════════════════════════════════
-    
-    private fun checkAndClickDashboard() {
-        val bookingNode = findNodeByText("Book Ticket") 
-                       ?: findNodeByContentDesc("Book Ticket") 
-                       ?: findNodeByText("Train Booking")
-                       ?: findNodeByText("IRCTC")
-                       ?: findNodeByViewId("cris.org.in.prs.ima:id/btn_book_ticket")
-        
-        if (bookingNode != null) {
-            automationState = AutomationState.JOURNEY_DETAILS
-            performClick(bookingNode, "✅ Dashboard: Booking Clicked")
-            retryCount = 0        } else {
-            handleRetry("Dashboard")
+        // 🎯 Detect IRCTC Dashboard
+        if (findNodeByText(root, "Book Ticket") != null || 
+            findNodeByText(root, "Train Booking") != null ||
+            findNodeByContentDesc(root, "book") != null) {
+            
+            automationStep = AutomationStep.TRAIN_SEARCH
+            retryCount = 0
+            showToast("🚂 IRCTC detected. Searching train...")
+            Log.d(TAG, "Dashboard detected → Train Search")
         }
     }
 
-    private fun handleJourneyDetails() {
-        val searchBtn = findNodeByText("Search Trains") 
-                     ?: findNodeByText("Find Trains")
-                     ?: findNodeByViewId("cris.org.in.prs.ima:id/btn_search")
-        
-        if (searchBtn != null) {
-            automationState = AutomationState.TRAIN_SEARCH
-            scope.launch {
-                sniperDelayUntilTarget()
-                performClick(searchBtn, "🎯 Journey Search Triggered")
+    private fun handleTrainSearch(root: AccessibilityNodeInfo) {
+        val trainNum = prefs.getString("train", "") ?: ""
+        if (trainNum.isEmpty() || trainNum.length != 5) {
+            handleError("Invalid train number")
+            return
+        }
+
+        // 🔍 Find train in search results
+        val trainNode = findNodeByTextContains(root, trainNum)
+        if (trainNode != null) {
+            val targetClass = prefs.getString("class", "SL") ?: "SL"
+            if (clickByContentDesc(root, targetClass, "🎯 Class: $targetClass")) {
+                automationStep = AutomationStep.PASSENGER_FORM
+                passengersProcessed = 0
+                retryCount = 0
+                Log.d(TAG, "Train selected → Passenger Form")
+            } else {
+                handleRetry("Class selection")
             }
         } else {
-            handleRetry("Journey Details")
+            // 🔄 Refresh if train not found
+            if (clickByText(root, "Refresh", "🔄 Refreshing results")) {
+                Log.d(TAG, "Refreshed train list")
+            } else {
+                handleRetry("Train search")
+            }
         }
     }
 
-    private fun handleTrainSelection() {
-        val bookNowBtn = findNodeByText("Book Now") 
-                      ?: findNodeByText("Continue")
-                      ?: findNodeByText("Select")
-                      ?: findNodeByViewId("cris.org.in.prs.ima:id/btn_book_now")
+    private fun handlePassengerForm(root: AccessibilityNodeInfo) {
+        // ✅ Smart: Find editable Name field (works for any passenger index)        val nameField = findEditableNodeByHint(root, "Name") 
+                     ?: findEditableNodeByText(root, "Name")
         
-        if (bookNowBtn != null) {
-            automationState = AutomationState.PASSENGER_DETAILS
-            performClick(bookNowBtn, "🚂 Train Selected")
-            retryCount = 0
-        } else {
-            handleRetry("Train Selection")
+        if (nameField != null) {
+            fillCurrentPassenger(root)
+        } else if (clickByContentDesc(root, "PASSENGER DETAILS", "🎯 Opening passenger section")) {
+            // Expand passenger section if collapsed
+            Log.d(TAG, "Clicked PASSENGER DETAILS")
+        } else if (passengersProcessed == 0) {
+            handleRetry("Passenger form detection")
         }
     }
 
-    private fun handleRetry(stateName: String) {
-        retryCount++
-        if (retryCount < MAX_RETRIES) {
-            logD("⏳ $stateName retry $retryCount/$MAX_RETRIES")
-            scope.launch { delay(1000) }
-        } else {
-            logD("❌ $stateName failed after $MAX_RETRIES retries")
-            automationState = AutomationState.PAUSED_ERROR
-            retryCount = 0
-        }
-    }
+    private fun fillCurrentPassenger(root: AccessibilityNodeInfo) {
+        val index = passengersProcessed.coerceIn(0, 3) // Support up to 4 passengers
+        
+        val name = prefs.getString("name_$index", "") ?: ""
+        val age = prefs.getString("age_$index", "") ?: "0"
+        val gender = prefs.getString("gender_$index", "Male") ?: "Male"
+        val meal = prefs.getString("meal_$index", "No Food") ?: "No Food"
 
-    private fun fillPassengerDetails() {
-        val passengerCount = prefs.getInt("passenger_count", 0)        
-        if (passengerCount > 6) {
-            logD("⚠️ Passenger count $passengerCount exceeds IRCTC limit (6)")
-            automationState = AutomationState.PAUSED_ERROR
+        if (name.isEmpty()) {
+            // Skip empty passenger slots
+            passengersProcessed++
+            checkAllPassengersDone()
             return
         }
-        
-        if (passengerCount == 0) {
-            logD("⚠️ No passengers to fill")
-            automationState = AutomationState.PAUSED_ERROR
-            return
-        }
-        
-        val targetClass = prefs.getString("class", "SL") ?: "SL"
 
         scope.launch {
             try {
-                val classNode = findNodeByText(targetClass) 
-                             ?: findNodeByViewId("cris.org.in.prs.ima:id/spinner_class")
-                classNode?.let { 
-                    performClick(it, "🎫 Class: $targetClass Selected") 
-                    delay(500)
+                // 📝 Fill Name
+                findEditableNodeByHint(root, "Name")?.let { 
+                    inputText(it, name, "📝 P${index+1}: Name")
+                    delay(200)
                 }
 
-                val addPassengerBtn = findNodeByText("Add Passenger") 
-                                   ?: findNodeByText("Add New")
-                addPassengerBtn?.let {
-                    performClick(it, "➕ Add Passenger Clicked")
-                    delay(400)
+                // 🔢 Fill Age
+                findEditableNodeByHint(root, "Age")?.let {
+                    inputText(it, age, "🔢 P${index+1}: Age")
+                    delay(200)
                 }
 
-                for (i in 0 until passengerCount.coerceAtMost(6)) {
-                    val name = prefs.getString("name_$i", "") ?: continue
-                    if (name.isEmpty()) continue
-                    
-                    val age = prefs.getString("age_$i", "") ?: "0"
-                    val gender = prefs.getString("gender_$i", "") ?: ""
-                    
-                    val nameField = findNodeByViewId("cris.org.in.prs.ima:id/et_passenger_name")
-                    val ageField = findNodeByViewId("cris.org.in.prs.ima:id/et_passenger_age")
-                    
-                    nameField?.let { performInputText(it, name, "📝 Name: $name") }
-                    delay(200)
-                    ageField?.let { performInputText(it, age, "🔢 Age: $age") }
-                    delay(200)
+                // 👤 Select Gender
+                clickByContentDesc(root, gender, "👤 P${index+1}: Gender")
+                delay(150)
 
-                    val genderNode = findNodeByText(gender)
-                    genderNode?.let { performClick(it, "👤 Gender: $gender") }
-                    delay(300)
-                    if (i < passengerCount - 1) {
-                        val addAnother = findNodeByText("Add Another") 
-                                      ?: findNodeByViewId("cris.org.in.prs.ima:id/btn_add_another")
-                        addAnother?.let {
-                            performClick(it, "➕ Add Another Passenger")
-                            delay(500)
-                        }
+                // 🍴 Smart Meal Selection (Skip if "No Food")
+                if (meal != "No Food" && meal.isNotEmpty()) {
+                    if (clickByContentDesc(root, "Meal Preference", "🍴 Opening meal options")) {
+                        delay(300)                        clickByContentDesc(root, meal, "🍴 P${index+1}: $meal")
+                        delay(200)
                     }
                 }
 
-                val submitBtn = findNodeByText("Continue") 
-                             ?: findNodeByText("Book Now")
-                             ?: findNodeByText("Proceed")
-                             ?: findNodeByViewId("cris.org.in.prs.ima:id/btn_continue")
-                submitBtn?.let { 
-                    performClick(it, "🚀 Submitting Booking...") 
-                    automationState = AutomationState.COMPLETED
-                    logD("✅ Booking Flow Completed")
+                // ✅ Mark passenger as processed
+                passengersProcessed++
+                Log.d(TAG, "✅ Passenger ${index+1} filled ($passengersProcessed/$totalPassengers)")
+
+                // 🔄 Add next passenger or continue
+                if (passengersProcessed < totalPassengers) {
+                    if (clickByText(root, "Add Passenger", "➕ Adding next passenger") ||
+                        clickByText(root, "+ Add New", "➕ Adding next passenger")) {
+                        delay(500)
+                        // Wait for next form to load
+                    } else {
+                        // Fallback: Try to continue anyway
+                        checkAllPassengersDone()
+                    }
+                } else {
+                    checkAllPassengersDone()
                 }
+
             } catch (e: Exception) {
-                logD("❌ Error in fillPassengerDetails: ${e.message}")
-                automationState = AutomationState.PAUSED_ERROR
+                Log.e(TAG, "❌ Fill passenger error: ${e.message}", e)
+                handleError("Passenger fill failed")
             }
         }
     }
 
-    private fun handleCaptchaOrError() {
-        val captchaPatterns = listOf(
-            "captcha", "verification", "are you human", 
-            "robot", "security check", "i'm not a robot"
-        )
-        
-        var captchaDetected = false
-        for (pattern in captchaPatterns) {
-            val node = findNodeByText(pattern, contains = true)
-            if (node != null) {
-                captchaDetected = true
-                node.recycle()
-                break
-            }
+    private fun checkAllPassengersDone() {
+        if (passengersProcessed >= totalPassengers) {
+            automationStep = AutomationStep.ADVANCED_OPTIONS
+            retryCount = 0
+            Log.d(TAG, "All passengers filled → Advanced Options")
         }
+    }
+
+    private fun handleAdvancedOptions(root: AccessibilityNodeInfo) {
+        // ⬆️ Auto Upgradation
+        if (prefs.getBoolean("auto_upgrade", false)) {
+            clickByContentDesc(root, "Consider Auto upgradation", "⬆️ Auto-upgrade enabled")
+            delayAction(100)
+        }
+
+        // ✅ Confirm Only
+        if (prefs.getBoolean("confirm_only", false)) {
+            clickByContentDesc(root, "Book only if confirm berths", "✅ Confirm-only enabled")
+            delayAction(100)
+        }
+        // 🚀 Click Review Journey
+        if (clickByContentDesc(root, "REVIEW JOURNEY", "🚀 Review Journey clicked") ||
+            clickByContentDesc(root, "REVIEW", "🚀 Review clicked") ||
+            clickByText(root, "Continue", "🚀 Continue clicked")) {
+            
+            automationStep = AutomationStep.REVIEW_CLICKED
+            hasClickedReview = true
+            captchaPaused = true  // ⏸️ Pause for manual CAPTCHA
+            showToast("⏸️ Bot paused. Solve CAPTCHA manually, then continue booking.")
+            Log.d(TAG, "Review clicked → Waiting for CAPTCHA (paused)")
+        } else {
+            handleRetry("Review button")
+        }
+    }
+
+    private fun handleReviewStage(root: AccessibilityNodeInfo) {
+        // 🔍 Detect if user has solved CAPTCHA and continued
+        // Look for payment page indicators
+        if (findNodeByTextContains(root, "PAYMENT") != null ||
+            findNodeByTextContains(root, "SELECT A PAYMENT") != null ||
+            findNodeByText(root, "MAKE PAYMENT") != null) {
+            
+            automationStep = AutomationStep.PAYMENT_PAGE
+            captchaPaused = false  // ▶️ Resume automation
+            hasClickedReview = false
+            Log.d(TAG, "Payment page detected → Resuming automation")
+        }
+    }
+
+    private fun handlePaymentPage(root: AccessibilityNodeInfo) {
+        val payMethod = prefs.getString("payment_method", "PhonePe") ?: "PhonePe"
         
-        if (captchaDetected) {
-            logD("🔐 CAPTCHA Detected - Pausing for manual input")
+        scope.launch {
+            try {
+                // 💳 Select Payment Tab
+                when {
+                    payMethod.contains("Wallet", true) || payMethod.contains("Mobikwik", true) -> {
+                        clickByContentDesc(root, "Wallet", "💸 Wallet tab")
+                    }
+                    payMethod.contains("UPI", true) || payMethod.contains("PhonePe", true) || 
+                    payMethod.contains("Paytm", true) || payMethod.contains("GPay", true) -> {
+                        clickByContentDesc(root, "BHIM", "💸 UPI tab")
+                        delay(200)
+                        clickByContentDesc(root, "UPI", "💸 UPI option")
+                    }
+                    else -> {
+                        clickByContentDesc(root, "BHIM", "💸 Default UPI tab")
+                    }
+                }                delay(300)
+
+                // 🎯 Select Specific Payment App
+                clickByContentDesc(root, payMethod, "🎯 Payment app: $payMethod")
+                delay(400)
+
+                // 🔥 FINAL STRIKE: Click Pay ₹ button
+                if (findNodeByTextContains(root, "Pay ₹")?.let { 
+                        clickNode(it, "🔥 FINAL STRIKE: Payment initiated!"); true 
+                    } == true) {
+                    
+                    automationStep = AutomationStep.COMPLETED
+                    isBotActive = false
+                    showToast("✅ Payment flow started! Complete manually.")
+                    Log.d(TAG, "🎉 Automation completed successfully!")
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Payment automation error: ${e.message}", e)
+                showToast("⚠️ Payment step failed. Complete manually.")
+            }
         }
     }
 
     // ═══════════════════════════════════════════════════════
-    // ⏱️ SNIPER TIMING ENGINE
-    // ═══════════════════════════════════════════════════════    
-    private suspend fun sniperDelayUntilTarget() {
-        val targetClass = prefs.getString("class", "SL") ?: "SL"
-        val now = Calendar.getInstance()
-        val currentHour = now.get(Calendar.HOUR_OF_DAY)
-        
-        val targetHour = when {
-            currentHour == 7 -> 8
-            targetClass in listOf("1A", "2A", "3A", "3E", "CC", "EC") -> 10
-            else -> 11
-        }
-
-        val targetTime = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, targetHour)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-
-        val offset = prefs.getInt("latency_ms", 400).toLong()
-        val fireTime = targetTime.timeInMillis - offset
-        val waitMs = fireTime - System.currentTimeMillis()
-        
-        when {
-            waitMs in 1..60000 -> {
-                logD("⏳ Sniper Lock: Firing in ${waitMs}ms")
-                delay(waitMs)
-            }
-            waitMs <= 0 && waitMs > -5000 -> {
-                logD("🎯 Target window active - Executing instantly")
-            }
-            else -> {
-                logD("⚠️ Timing off, proceeding anyway")
-            }
-        }
-        logD("🔥 FIRE! Executing click...")
-    }
-
+    // 🛠️ NODE FINDING UTILS (Memory-Safe & Robust)
     // ═══════════════════════════════════════════════════════
-    // 🛡️ NODE FINDING UTILS (MEMORY SAFE)
-    // ═══════════════════════════════════════════════════════
-    
-    private fun findNodeByText(text: String, contains: Boolean = false): AccessibilityNodeInfo? {
-        val root = rootInActiveWindow ?: return null
-        return traverseAndFind(root) { node ->
-            val nodeText = node.text?.toString()
-            if (contains) {
-                nodeText?.contains(text, ignoreCase = true) == true
-            } else {
-                nodeText?.equals(text, ignoreCase = true) == true            }
-        }
-    }
 
-    private fun findNodeByContentDesc(desc: String, contains: Boolean = false): AccessibilityNodeInfo? {
-        val root = rootInActiveWindow ?: return null
-        return traverseAndFind(root) { node ->
-            val nodeDesc = node.contentDescription?.toString()
-            if (contains) {
-                nodeDesc?.contains(desc, ignoreCase = true) == true
-            } else {
-                nodeDesc?.equals(desc, ignoreCase = true) == true
+    private fun findNodeByText(root: AccessibilityNodeInfo, text: String): AccessibilityNodeInfo? {
+        return root.findAccessibilityNodeInfosByText(text)
+            .firstOrNull { 
+                it.text?.toString().equals(text, ignoreCase = true) && 
+                (it.isClickable || it.parent?.isClickable == true)
             }
-        }
     }
 
-    private fun findNodeByViewId(viewId: String): AccessibilityNodeInfo? {
-        val root = rootInActiveWindow ?: return null
+    private fun findNodeByTextContains(root: AccessibilityNodeInfo, text: String): AccessibilityNodeInfo? {
+        return root.findAccessibilityNodeInfosByText(text)
+            .firstOrNull { 
+                it.text?.toString()?.contains(text, ignoreCase = true) == true && 
+                (it.isClickable || it.parent?.isClickable == true)
+            }
+    }
+
+    private fun findNodeByContentDesc(root: AccessibilityNodeInfo, desc: String): AccessibilityNodeInfo? {
         return traverseAndFind(root) { node ->
-            node.viewIdResourceName?.equals(viewId, ignoreCase = true) == true
+            node.contentDescription?.toString()?.equals(desc, ignoreCase = true) == true && 
+            (node.isClickable || node.parent?.isClickable == true)
+        }
+    }
+    private fun findEditableNodeByHint(root: AccessibilityNodeInfo, hint: String): AccessibilityNodeInfo? {
+        return traverseAndFind(root) { node ->
+            node.isEditable && (
+                node.hintText?.toString()?.contains(hint, ignoreCase = true) == true ||
+                node.contentDescription?.toString()?.contains(hint, ignoreCase = true) == true
+            )
         }
     }
 
+    private fun findEditableNodeByText(root: AccessibilityNodeInfo, text: String): AccessibilityNodeInfo? {
+        return traverseAndFind(root) { node ->
+            node.isEditable && node.text?.toString()?.contains(text, ignoreCase = true) == true
+        }
+    }
+
+    // ✅ Memory-Safe Recursive Traversal with Node Recycling
     private fun traverseAndFind(
         node: AccessibilityNodeInfo?,
         predicate: (AccessibilityNodeInfo) -> Boolean
@@ -371,72 +414,123 @@ class VMAXAccessibilityService : AccessibilityService() {
         if (node == null) return null
         
         if (predicate(node)) {
-            return AccessibilityNodeInfo.obtain(node)
+            return AccessibilityNodeInfo.obtain(node) // Safe copy
         }
         
         for (i in 0 until node.childCount) {
             val child = node.getChild(i)
             val found = traverseAndFind(child, predicate)
-            child?.recycle()
+            child?.recycle() // ✅ Critical: Prevent memory leaks
             if (found != null) return found
         }
         return null
     }
 
     // ═══════════════════════════════════════════════════════
-    // ⚡ SAFE UI ACTIONS
+    // ⚡ ACTION EXECUTION (Click + Input)
     // ═══════════════════════════════════════════════════════
-    
-    private fun performClick(node: AccessibilityNodeInfo, logMsg: String) {
-        try {
-            val now = System.currentTimeMillis()
-            if (now - lastClickTime < CLICK_DEBOUNCE_MS) {                logD("⏸️ Debounced: $logMsg")
-                return
-            }
-            lastClickTime = now
-            
-            if (node.isClickable) {
-                val success = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                if (success) {
-                    logD(logMsg)
-                } else {
-                    logD("❌ Click failed: $logMsg")
+
+    private fun clickByText(root: AccessibilityNodeInfo, text: String, logMsg: String): Boolean {
+        return findNodeByText(root, text)?.let { clickNode(it, logMsg); true } ?: false
+    }
+
+    private fun clickByContentDesc(root: AccessibilityNodeInfo, desc: String, logMsg: String): Boolean {
+        return findNodeByContentDesc(root, desc)?.let { clickNode(it, logMsg); true } ?: false
+    }
+
+    private fun clickNode(node: AccessibilityNodeInfo, logMsg: String): Boolean {
+        return try {            var target: AccessibilityNodeInfo? = node
+            while (target != null) {
+                if (target.isClickable) {
+                    val success = target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    if (success) {
+                        Log.d(TAG, "✅ $logMsg")
+                        lastActionTime = System.currentTimeMillis()
+                        return true
+                    }
                 }
-            } else {
-                node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-                Thread.sleep(100)
-                val success = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                if (success) {
-                    logD(logMsg)
-                }
+                target = target.parent
             }
+            // Fallback: Try focus + click
+            node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            delayAction(100)
+            val success = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            if (success) {
+                Log.d(TAG, "✅ $logMsg (fallback)")
+                lastActionTime = System.currentTimeMillis()
+            }
+            success
         } catch (e: Exception) {
-            logD("⚠️ Click exception: ${e.message}")
-        } finally {
-            node.recycle()
+            Log.e(TAG, "❌ Click failed: $logMsg - ${e.message}", e)
+            false
         }
     }
 
-    private fun performInputText(node: AccessibilityNodeInfo, text: String, logMsg: String) {
+    private fun inputText(node: AccessibilityNodeInfo, text: String, logMsg: String = "") {
         try {
             if (node.isEditable) {
                 val args = Bundle().apply {
                     putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
                 }
                 val success = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-                if (success) {
-                    logD(logMsg)
-                } else {
-                    logD("❌ Input failed: $logMsg")
+                if (success && logMsg.isNotEmpty()) {
+                    Log.d(TAG, "✅ $logMsg: '$text'")
                 }
             }
         } catch (e: Exception) {
-            logD("⚠️ Input exception: ${e.message}")
-        } finally {
-            node.recycle()
+            Log.e(TAG, "❌ Input failed: ${e.message}", e)
         }
     }
 
-    private fun logD(msg: String) {
-        Log.d("VMAX_SERVICE", msg)
-    }}
+    private fun delayAction(ms: Long) {
+        lastActionTime = System.currentTimeMillis() + ms
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // 🔄 ERROR HANDLING & RETRY LOGIC
+    // ═══════════════════════════════════════════════════════
+    private fun handleRetry(step: String) {
+        retryCount++
+        if (retryCount < MAX_RETRIES) {
+            Log.d(TAG, "🔄 $step retry $retryCount/$MAX_RETRIES")
+            scope.launch { delay(RETRY_DELAY_MS) }
+        } else {
+            Log.e(TAG, "❌ $step failed after $MAX_RETRIES retries")
+            handleError("$step failed")
+        }
+    }
+
+    private fun handleError(message: String) {
+        automationStep = AutomationStep.ERROR
+        captchaPaused = false
+        isBotActive = false
+        Log.e(TAG, "🚨 Error: $message")
+        showToast("⚠️ Bot paused: $message")
+    }
+
+    private fun resetAutomation() {
+        isBotActive = false
+        automationStep = AutomationStep.IDLE
+        passengersProcessed = 0
+        totalPassengers = 1
+        retryCount = 0
+        captchaPaused = false
+        hasClickedReview = false
+        lastActionTime = 0
+        Log.d(TAG, "🔄 Automation reset")
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // 📢 USER FEEDBACK
+    // ═══════════════════════════════════════════════════════
+
+    private fun showToast(message: String) {
+        scope.launch {
+            try {
+                Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Log.w(TAG, "Toast failed: ${e.message}")
+            }
+        }
+    }
+}
