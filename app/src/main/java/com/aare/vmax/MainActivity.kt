@@ -34,7 +34,7 @@ class MainActivity : AppCompatActivity() {
     
     companion object {
         private const val PREFS_NAME = "VMaxProfile"
-        private const val SERVICE_CLASS_NAME = "VMAXAccessibilityService"
+        private const val SERVICE_CLASS_NAME = "VMAXAccessibilityService"  // ✅ Used now
     }
     
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -173,7 +173,6 @@ class MainActivity : AppCompatActivity() {
         return passengers
     }
     
-    // ✅ FIXED: Age validation with error handling
     private fun addPassengerIfValid(
         list: MutableList<PassengerData>, 
         nameView: EditText, 
@@ -185,14 +184,39 @@ class MainActivity : AppCompatActivity() {
         val gender = genderView.text.toString().trim()
         
         if (name.isNotEmpty() && ageText.isNotEmpty() && gender.isNotEmpty()) {
-            val age = ageText.toIntOrNull()
-            if (age != null && age in 1..120) {
-                list.add(PassengerData(name, ageText, gender))
-                ageView.error = null  // Clear error if valid
-            } else {
-                ageView.error = "Enter valid age (1-120)"
-                ageView.requestFocus()
+            // Name validation (4-16 characters)
+            if (name.length < 4) {
+                nameView.error = "नाम कम से कम 4 अक्षर का होना चाहिए"
+                nameView.requestFocus()
+                return
             }
+            if (name.length > 16) {
+                nameView.error = "नाम 16 अक्षर से ज्यादा नहीं होना चाहिए"
+                nameView.requestFocus()
+                return
+            }
+
+            // Age validation (1-199)
+            val age = ageText.toIntOrNull()
+            if (age == null || age < 1 || age > 199) {
+                ageView.error = "उम्र 1 से 199 के बीच होनी चाहिए"
+                ageView.requestFocus()
+                return
+            }
+
+            // Gender validation
+            val validGenders = listOf("Male", "Female", "Transgender", "M", "F")
+            if (gender !in validGenders && !gender.startsWith("M", ignoreCase = true) && 
+                !gender.startsWith("F", ignoreCase = true)) {
+                genderView.error = "सही जेंडर चुनें (Male/Female/Transgender)"
+                genderView.requestFocus()
+                return
+            }
+
+            list.add(PassengerData(name, ageText, gender))
+            nameView.error = null
+            ageView.error = null
+            genderView.error = null
         }
     }
     
@@ -203,7 +227,6 @@ class MainActivity : AppCompatActivity() {
             return
         }
         
-        // ✅ FIXED: More accurate service check
         if (!isAccessibilityServiceEnabled()) {
             tvProfileStatus.text = "⚠️ Enable VMAX in Accessibility Settings"
             tvProfileStatus.setTextColor(getColor(android.R.color.holo_orange_dark))
@@ -216,20 +239,16 @@ class MainActivity : AppCompatActivity() {
         openIrctcApp()
     }
     
-    // ✅ FIXED: More accurate service check
+    // ✅ FINAL FIX: Using SERVICE_CLASS_NAME for 100% accuracy
     private fun isAccessibilityServiceEnabled(): Boolean {
         val enabledServices = Settings.Secure.getString(
             contentResolver, 
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         ) ?: return false
         
-        // Method 1: Exact service name check (if you want to import the service)
-        // val serviceName = "$packageName/$SERVICE_CLASS_NAME"
-        // return enabledServices.contains(serviceName)
-        
-        // Method 2: Safe check without import (still accurate enough)
-        return enabledServices.contains(packageName) && 
-               enabledServices.contains("AccessibilityService")
+        // Exact service name check (सबसे सटीक तरीका)
+        val exactServiceName = "$packageName/$SERVICE_CLASS_NAME"
+        return enabledServices.contains(exactServiceName)
     }
     
     private fun openAccessibilitySettings() {
@@ -238,19 +257,46 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun openIrctcApp() {
-        val irctcPackage = "cris.org.in.prs.ima" 
-        try {
-            val intent = packageManager.getLaunchIntentForPackage(irctcPackage)
-            if (intent != null) {
-                startActivity(intent)
-                tvProfileStatus.text = "🚂 IRCTC App Opened! 🔥"
-            } else {
-                tvProfileStatus.text = "❌ IRCTC App NOT Installed!"
-                val playStoreIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$irctcPackage"))
-                startActivity(playStoreIntent)
+        val irctcPackages = arrayOf(
+            "cris.org.in.prs.ima",      // असली और लेटेस्ट ऐप
+            "com.irctc.railconnect",    // पुराना वर्जन
+            "in.irctc.railconnect"      // बीटा वर्जन
+        )
+        
+        var isAppLaunched = false
+        val pm = packageManager
+
+        for (pkg in irctcPackages) {
+            try {
+                val intent = pm.getLaunchIntentForPackage(pkg)
+                if (intent != null) {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    startActivity(intent)
+                    
+                    tvProfileStatus.text = "🚂 IRCTC ऐप मिल गया! हमला शुरू... 🔥"
+                    tvProfileStatus.setTextColor(getColor(android.R.color.holo_green_dark))
+                    isAppLaunched = true
+                    break
+                }
+            } catch (e: Exception) {
+                // अगला पैकेज ट्राई करो
             }
-        } catch (e: Exception) {
-            tvProfileStatus.text = "❌ Error: ${e.message}"
+        }
+
+        if (!isAppLaunched) {
+            tvProfileStatus.text = "❌ ऐप नहीं मिला! प्ले स्टोर जा रहे हैं..."
+            tvProfileStatus.setTextColor(getColor(android.R.color.holo_red_dark))
+            
+            try {
+                val playStoreIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=cris.org.in.prs.ima"))
+                playStoreIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(playStoreIntent)
+            } catch (e: Exception) {
+                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=cris.org.in.prs.ima"))
+                webIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(webIntent)
+            }
         }
     }
 }
