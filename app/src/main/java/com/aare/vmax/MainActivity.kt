@@ -6,6 +6,8 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.text.TextUtils
@@ -15,13 +17,8 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
 import com.aare.vmax.core.orchestrator.PassengerData
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.util.Calendar
-import kotlin.random.Random
-
 
 class MainActivity : AppCompatActivity() {
 
@@ -41,13 +38,12 @@ class MainActivity : AppCompatActivity() {
     private var isAutomationReady = false
     private lateinit var prefs: SharedPreferences
 
-
     // ═══════════════════════════════════════════════════════
     // ⚙️ CONSTANTS
     // ═══════════════════════════════════════════════════════
     
     companion object {
-                private const val PREFS_NAME = "VMaxProfile"
+        private const val PREFS_NAME = "VMaxProfile"
         private const val SERVICE_CLASS_NAME = "com.aare.vmax.VMAXAccessibilityService"
         
         private const val DEFAULT_LATENCY_MS = 400
@@ -63,9 +59,8 @@ class MainActivity : AppCompatActivity() {
         private const val MAX_AGE = 199
     }
 
-
     // ═══════════════════════════════════════════════════════
-    // 🔄 LIFECYCLE
+    // 🔄 LIFECYCLE METHODS
     // ═══════════════════════════════════════════════════════
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -79,10 +74,10 @@ class MainActivity : AppCompatActivity() {
         loadSavedData()
         setupClickListeners()
 
-        lifecycleScope.launch {
+        Handler(Looper.getMainLooper()).postDelayed({
             checkBatteryOptimization()
             handleFirstTimeSetup()
-        }
+        }, 500)
     }
 
     override fun onResume() {
@@ -92,10 +87,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-
     // ═══════════════════════════════════════════════════════
-    // 🎨 VIEWS
+    // 🎨 VIEW INITIALIZATION
     // ═══════════════════════════════════════════════════════
+    
     private fun initViews() {
         etTrainNumber = findViewById(R.id.etTrainNumber)
         etClass = findViewById(R.id.etClass)
@@ -106,26 +101,10 @@ class MainActivity : AppCompatActivity() {
 
         passengerFields.addAll(
             listOf(
-                PassengerFieldSet(
-                    findViewById(R.id.etName1),
-                    findViewById(R.id.etAge1),
-                    findViewById(R.id.etGender1)
-                ),
-                PassengerFieldSet(
-                    findViewById(R.id.etName2),
-                    findViewById(R.id.etAge2),
-                    findViewById(R.id.etGender2)
-                ),
-                PassengerFieldSet(
-                    findViewById(R.id.etName3),
-                    findViewById(R.id.etAge3),
-                    findViewById(R.id.etGender3)
-                ),
-                PassengerFieldSet(
-                    findViewById(R.id.etName4),
-                    findViewById(R.id.etAge4),
-                    findViewById(R.id.etGender4)
-                )
+                PassengerFieldSet(findViewById(R.id.etName1), findViewById(R.id.etAge1), findViewById(R.id.etGender1)),
+                PassengerFieldSet(findViewById(R.id.etName2), findViewById(R.id.etAge2), findViewById(R.id.etGender2)),
+                PassengerFieldSet(findViewById(R.id.etName3), findViewById(R.id.etAge3), findViewById(R.id.etGender3)),
+                PassengerFieldSet(findViewById(R.id.etName4), findViewById(R.id.etAge4), findViewById(R.id.etGender4))
             )
         )
     }
@@ -135,9 +114,8 @@ class MainActivity : AppCompatActivity() {
         etClass.setupClassPicker(this)
     }
 
-
     // ═══════════════════════════════════════════════════════
-    // 💾 DATA
+    // 💾 DATA HANDLING
     // ═══════════════════════════════════════════════════════
 
     private fun loadSavedData() {
@@ -145,7 +123,7 @@ class MainActivity : AppCompatActivity() {
             etTrainNumber.setText(prefs.getString("train", ""))
             etClass.setText(prefs.getString("class", "SL"))
 
-            // ✅ FIX #1: Two separate statements on two separate lines            val savedLatency = prefs.getInt("latency_ms", DEFAULT_LATENCY_MS)
+            val savedLatency = prefs.getInt("latency_ms", DEFAULT_LATENCY_MS)
             etLatency.setText(savedLatency.coerceIn(MIN_LATENCY_MS, MAX_LATENCY_MS).toString())
 
             passengerFields.forEachIndexed { index, fields ->
@@ -153,10 +131,7 @@ class MainActivity : AppCompatActivity() {
             }
 
         } catch (e: Exception) {
-            showStatus(
-                "⚠️ Data load error",
-                ContextCompat.getColor(this, android.R.color.holo_orange_dark)
-            )
+            showStatus("⚠️ Data load error", ContextCompat.getColor(this, android.R.color.holo_orange_dark))
         }
     }
 
@@ -165,13 +140,11 @@ class MainActivity : AppCompatActivity() {
         btnStartIrctc.setOnClickListener { handleStartAutomation() }
     }
 
-
     // ═══════════════════════════════════════════════════════
-    // ✅ SAVE PROFILE
+    // ✅ SAVE PROFILE LOGIC
     // ═══════════════════════════════════════════════════════
 
     private fun handleSaveProfile() {
-        
         val trainNumber = etTrainNumber.text.toString().trim()
         when (val trainResult = validateTrainNumber(trainNumber)) {
             is ValidationResult.Error -> {
@@ -194,7 +167,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        val latencyMs = etLatency.text.toString().trim()            .toIntOrNull()
+        val latencyMs = etLatency.text.toString().trim()
+            .toIntOrNull()
             ?.coerceIn(MIN_LATENCY_MS, MAX_LATENCY_MS)
             ?: DEFAULT_LATENCY_MS
 
@@ -218,17 +192,15 @@ class MainActivity : AppCompatActivity() {
     private fun collectValidPassengers(): MutableList<PassengerData> {
         val passengers = mutableListOf<PassengerData>()
 
-        passengerFields.forEachIndexed { index, fields ->
+        for (fields in passengerFields) {
             val name = fields.nameEt.text.toString().trim()
             val ageText = fields.ageEt.text.toString().trim()
             val gender = fields.genderEt.text.toString().trim()
 
-            if (name.isEmpty() && ageText.isEmpty() && gender.isEmpty()) {
-                return@forEachIndexed
-            }
+            if (name.isEmpty() && ageText.isEmpty() && gender.isEmpty()) continue
 
             when (val result = validatePassenger(name, ageText, gender, fields)) {
-                is ValidationResult.Error -> return@collectValidPassengers
+                is ValidationResult.Error -> return mutableListOf()
                 is ValidationResult.Success -> {
                     passengers.add(PassengerData(name, ageText, gender))
                     fields.clearErrors()
@@ -244,6 +216,7 @@ class MainActivity : AppCompatActivity() {
         gender: String,
         fields: PassengerFieldSet
     ): ValidationResult {
+
         if (name.length !in MIN_NAME_LENGTH..MAX_NAME_LENGTH) {
             fields.nameEt.error = "नाम $MIN_NAME_LENGTH-$MAX_NAME_LENGTH अक्षर का होना चाहिए"
             fields.nameEt.requestFocus()
@@ -286,13 +259,13 @@ class MainActivity : AppCompatActivity() {
         }.apply()
     }
 
-
     // ═══════════════════════════════════════════════════════
-    // 🚀 AUTOMATION
+    // 🚀 AUTOMATION LOGIC (NO DELAY!)
     // ═══════════════════════════════════════════════════════
 
     private fun handleStartAutomation() {
-                if (prefs.getString("train", "").isNullOrEmpty()) {
+        
+        if (prefs.getString("train", "").isNullOrEmpty()) {
             showStatus("❌ Please save profile first!", android.R.color.holo_red_dark)
             return
         }
@@ -312,26 +285,19 @@ class MainActivity : AppCompatActivity() {
 
         displayTargetTime(config)
 
-        lifecycleScope.launch {
-            showStatus("🚀 Preparing automation...", android.R.color.holo_blue_dark)
-            delay(HumanDelayGenerator.generate(300))
-            launchIrctcApp()
-        }
+        // ✅ सीधा लॉन्च! कोई Delay नहीं। रॉकेट की तरह उड़ेगा।
+        launchIrctcApp()
     }
 
     private fun displayTargetTime(config: AutomationConfig) {
         val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         val targetTime = when {
             currentHour == 7 -> "08:00 AM (Normal)"
-            currentHour in 8..9 || config.bookingClass in listOf("1A", "2A", "3A", "3E", "CC") ->
-                "10:00 AM (AC Tatkal)"
+            currentHour in 8..9 || config.bookingClass in listOf("1A", "2A", "3A", "3E", "CC") -> "10:00 AM (AC Tatkal)"
             else -> "11:00 AM (SL Tatkal)"
         }
 
-        showStatus(
-            "🎯 $targetTime\n⏱️ ${config.latencyMs}ms\n🚀 Ready!",
-            android.R.color.holo_blue_dark
-        )
+        showStatus("🎯 $targetTime\n⏱️ ${config.latencyMs}ms\n🚀 Firing instantly!", android.R.color.holo_blue_dark)
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
@@ -340,11 +306,15 @@ class MainActivity : AppCompatActivity() {
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         ) ?: return false
 
-        return TextUtils.SimpleStringSplitter(':').apply { setString(enabled) }
-            .asSequence()            .any {
-                it.equals(SERVICE_CLASS_NAME, ignoreCase = true) ||
-                        it.contains(packageName, ignoreCase = true)
+        val splitter = TextUtils.SimpleStringSplitter(':')
+        splitter.setString(enabled)
+        while (splitter.hasNext()) {
+            val service = splitter.next()
+            if (service.equals(SERVICE_CLASS_NAME, ignoreCase = true) || service.contains(packageName, ignoreCase = true)) {
+                return true
             }
+        }
+        return false
     }
 
     private fun launchIrctcApp() {
@@ -357,9 +327,7 @@ class MainActivity : AppCompatActivity() {
         for (pkg in packages) {
             try {
                 packageManager.getLaunchIntentForPackage(pkg)?.let { intent ->
-                    intent.addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                    )
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                     startActivity(intent)
                     showStatus("🚂 IRCTC Launched!", android.R.color.holo_green_dark)
                     return
@@ -371,27 +339,25 @@ class MainActivity : AppCompatActivity() {
         showIrctcInstallDialog()
     }
 
-
     // ═══════════════════════════════════════════════════════
-    // ⚡ SYSTEM
+    // ⚡ SYSTEM OPTIMIZATION
     // ═══════════════════════════════════════════════════════
 
-    private suspend fun checkBatteryOptimization() {
+    private fun checkBatteryOptimization() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
             if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
                 showStatus("⚠️ Disable battery optimization", android.R.color.holo_orange_dark)
-                delay(1500)
-                requestIgnoreBatteryOptimizations()
+                Handler(Looper.getMainLooper()).postDelayed({
+                    requestIgnoreBatteryOptimizations()
+                }, 1500)
             }
         }
     }
 
-    private suspend fun handleFirstTimeSetup() {
+    private fun handleFirstTimeSetup() {
         if (!prefs.getBoolean("settings_guide_shown", false)) {
-            delay(500)
-            showDisclaimerDialog()            delay(300)
-            showOptimizationGuide()
+            showDisclaimerDialog()
             prefs.edit().putBoolean("settings_guide_shown", true).apply()
         }
     }
@@ -412,7 +378,9 @@ class MainActivity : AppCompatActivity() {
                         "• Use at your own risk\n\n" +
                         "By continuing, you accept these terms."
             )
-            .setPositiveButton("I Understand") { _, _ -> }
+            .setPositiveButton("I Understand") { _, _ -> 
+                showOptimizationGuide()
+            }
             .setNegativeButton("Exit") { _, _ -> finish() }
             .setCancelable(false)
             .show()
@@ -426,10 +394,7 @@ class MainActivity : AppCompatActivity() {
             .setMessage(message)
             .setPositiveButton("Got it!") { _, _ ->
                 try {
-                    startActivity(
-                        Intent("miui.intent.action.OP_AUTO_START")
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
+                    startActivity(Intent("miui.intent.action.OP_AUTO_START").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 } catch (e: Exception) {
                     openAccessibilitySettings()
                 }
@@ -439,22 +404,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun showIrctcInstallDialog() {
         android.app.AlertDialog.Builder(this)
-            .setTitle("IRCTC App Required")            .setMessage("Please install IRCTC Rail Connect to continue.")
+            .setTitle("IRCTC App Required")
+            .setMessage("Please install IRCTC Rail Connect to continue.")
             .setPositiveButton("Install") { _, _ ->
                 try {
-                    startActivity(
-                        Intent(
-                            Intent.ACTION_VIEW,
-                            Uri.parse("market://details?id=cris.org.in.prs.ima")
-                        )
-                    )
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=cris.org.in.prs.ima")))
                 } catch (e: Exception) {
-                    startActivity(
-                        Intent(
-                            Intent.ACTION_VIEW,
-                            Uri.parse("https://play.google.com/store/apps/details?id=cris.org.in.prs.ima")
-                        )
-                    )
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=cris.org.in.prs.ima")))
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -463,16 +419,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun openAccessibilitySettings() {
         try {
-            startActivity(
-                Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (e: Exception) {
-            Toast.makeText(
-                this,
-                "Please enable Accessibility Service manually",
-                Toast.LENGTH_LONG
-            ).show()
+            Toast.makeText(this, "Please enable Accessibility Service manually", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -487,13 +436,10 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-
-// ═══════════════════════════════════════════════════════// 🧩 HELPERS
+// ═══════════════════════════════════════════════════════
+// 🧩 HELPER CLASSES & UTILS
 // ═══════════════════════════════════════════════════════
 
-/**
- * Groups passenger input fields
- */
 data class PassengerFieldSet(
     val nameEt: EditText,
     val ageEt: EditText,
@@ -523,29 +469,18 @@ data class PassengerFieldSet(
     }
 }
 
-
-/**
- * Type-safe validation result
- */
 sealed class ValidationResult {
     object Success : ValidationResult()
     data class Error(val message: String) : ValidationResult()
 }
 
-
-/**
- * Automation config bundle
- */
 data class AutomationConfig(
-    val trainNumber: String,    val bookingClass: String,
+    val trainNumber: String,
+    val bookingClass: String,
     val latencyMs: Int,
     val passengerCount: Int
 )
 
-
-/**
- * Extension: Class picker
- */
 fun EditText.setupClassPicker(context: Context) {
     isFocusable = false
     setOnClickListener {
@@ -557,55 +492,34 @@ fun EditText.setupClassPicker(context: Context) {
     }
 }
 
-
-/**
- * Human-like delay generator
- */
-object HumanDelayGenerator {
-    private val random = Random(System.currentTimeMillis())
-
-    fun generate(baseMs: Int, variance: Float = 0.15f): Long {
-        val jitter = (baseMs * variance).toInt()
-        return (baseMs + random.nextInt(-jitter, jitter + 1))
-            .coerceIn(100, 3000).toLong()
-    }
-}
-
-
-/**
- * Device optimization helper
- */
 object DeviceOptimizationHelper {
-    
     fun getOptimizationInstructions(context: Context): String {
-        
-        // ✅ FIX #3: These two lines are now properly separated
         val manufacturer = Build.MANUFACTURER.lowercase()
         return when {
-            
             manufacturer.contains("xiaomi") || manufacturer.contains("redmi") ->
                 "📍 Settings → Apps → VMAX Pro → Autostart → Enable\n" +
-                        "📍 Settings → Battery → App battery saver → No restrictions\n" +
-                        "📍 Security App → Permissions → Autostart → Enable"
+                "📍 Settings → Battery → App battery saver → No restrictions\n" +
+                "📍 Security App → Permissions → Autostart → Enable"
+
             manufacturer.contains("oppo") || manufacturer.contains("realme") ->
                 "📍 Settings → Apps → App management → VMAX Pro → Autostart → Enable\n" +
-                        "📍 Settings → Battery → Optimize battery → VMAX Pro → Don't optimize\n" +
-                        "📍 Recent Apps → Lock VMAX Pro"
+                "📍 Settings → Battery → Optimize battery → VMAX Pro → Don't optimize\n" +
+                "📍 Recent Apps → Lock VMAX Pro"
 
             manufacturer.contains("vivo") ->
                 "📍 Settings → More settings → Permissions → Autostart → Enable\n" +
-                        "📍 Settings → Battery → Background power management → Allow\n" +
-                        "📍 i Manager → App manager → VMAX Pro → Lock"
+                "📍 Settings → Battery → Background power management → Allow\n" +
+                "📍 i Manager → App manager → VMAX Pro → Lock"
 
             manufacturer.contains("samsung") ->
                 "📍 Settings → Apps → VMAX Pro → Battery → Unrestricted\n" +
-                        "📍 Settings → Device care → Battery → Background usage limits → Never sleeping\n" +
-                        "📍 Recent Apps → Long press VMAX → Lock"
+                "📍 Settings → Device care → Battery → Background usage limits → Never sleeping\n" +
+                "📍 Recent Apps → Long press VMAX → Lock"
 
             else ->
                 "📍 Settings → Apps → VMAX Pro → Battery → Unrestricted\n" +
-                        "📍 Recent Apps → Long press VMAX Pro → Lock the app\n" +
-                        "📍 Keep app open in background before Tatkal time"
+                "📍 Recent Apps → Long press VMAX Pro → Lock the app\n" +
+                "📍 Keep app open in background before Tatkal time"
         }
     }
 }
