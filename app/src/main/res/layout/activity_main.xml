@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView 
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#121212"
@@ -11,10 +10,6 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:padding="16dp">
-
-        <!-- ═══════════════════════════════════════════════════════ -->
-        <!-- 🚂 TRAIN DETAILS SECTION -->
-        <!-- ═══════════════════════════════════════════════════════ -->
 
         <TextView
             android:layout_width="match_parent"
@@ -47,14 +42,15 @@
             android:background="#2C2C2C"
             android:padding="12dp"
             android:hint="Booking Class (क्लास - SL / 3A)"
-            android:textColorHint="#888888"            android:textColor="#FFFFFF"
+            android:textColorHint="#888888"
+            android:textColor="#FFFFFF"            
             android:layout_marginBottom="12dp"
-            android:importantForAutofill="no"
-            android:imeOptions="actionNext"
-            android:maxLines="1"
             android:focusable="false"
             android:clickable="true"
-            android:cursorVisible="false"/>
+            android:cursorVisible="false"
+            android:importantForAutofill="no"
+            android:imeOptions="actionNext"
+            android:maxLines="1"/>
 
         <EditText
             android:id="@+id/etLatency"
@@ -71,10 +67,6 @@
             android:imeOptions="actionDone"
             android:maxLines="1"/>
 
-        <!-- ═══════════════════════════════════════════════════════ -->
-        <!-- 👥 PASSENGERS SECTION -->
-        <!-- ═══════════════════════════════════════════════════════ -->
-
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -84,7 +76,6 @@
             android:textSize="16sp"
             android:layout_marginBottom="8dp"/>
 
-        <!-- ===== Passenger 1 ===== -->
         <EditText
             android:id="@+id/etName1"
             android:layout_width="match_parent"
@@ -96,7 +87,8 @@
             android:textColor="#FFFFFF"
             android:layout_marginBottom="8dp"
             android:importantForAutofill="no"
-            android:imeOptions="actionNext"            android:maxLines="1"/>
+            android:imeOptions="actionNext"            
+            android:maxLines="1"/>
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -138,14 +130,14 @@
                 android:maxLines="1"/>
         </LinearLayout>
 
-        <!-- ===== Passenger 2 ===== -->
         <EditText
             android:id="@+id/etName2"
             android:layout_width="match_parent"
             android:layout_height="55dp"
             android:background="#2C2C2C"
             android:padding="12dp"
-            android:hint="2. Passenger Name (Optional)"            android:textColorHint="#888888"
+            android:hint="2. Passenger Name (Optional)"            
+            android:textColorHint="#888888"
             android:textColor="#FFFFFF"
             android:layout_marginBottom="8dp"
             android:importantForAutofill="no"
@@ -192,9 +184,9 @@
                 android:maxLines="1"/>
         </LinearLayout>
 
-        <!-- ===== Passenger 3 ===== -->
         <EditText
-            android:id="@+id/etName3"            android:layout_width="match_parent"
+            android:id="@+id/etName3"            
+            android:layout_width="match_parent"
             android:layout_height="55dp"
             android:background="#2C2C2C"
             android:padding="12dp"
@@ -243,9 +235,9 @@
                 android:cursorVisible="false"
                 android:importantForAutofill="no"
                 android:imeOptions="actionNext"
-                android:maxLines="1"/>        </LinearLayout>
+                android:maxLines="1"/>        
+        </LinearLayout>
 
-        <!-- ===== Passenger 4 ===== -->
         <EditText
             android:id="@+id/etName4"
             android:layout_width="match_parent"
@@ -292,16 +284,13 @@
                 android:hint="Gender"
                 android:textColorHint="#888888"
                 android:textColor="#FFFFFF"
-                android:focusable="false"                android:clickable="true"
+                android:focusable="false"                
+                android:clickable="true"
                 android:cursorVisible="false"
                 android:importantForAutofill="no"
                 android:imeOptions="actionDone"
                 android:maxLines="1"/>
         </LinearLayout>
-
-        <!-- ═══════════════════════════════════════════════════════ -->
-        <!-- 🎯 ACTION BUTTONS -->
-        <!-- ═══════════════════════════════════════════════════════ -->
 
         <Button
             android:id="@+id/btnSaveProfile"
@@ -328,7 +317,7 @@
             android:id="@+id/btnStartIrctc"
             android:layout_width="match_parent"
             android:layout_height="65dp"
-            android:text="🚀 START & OPEN IRCTC"
+            android:text="🚀 START &amp; OPEN IRCTC"
             android:textColor="#FFFFFF"
             android:textSize="18sp"
             android:textStyle="bold"
@@ -337,3 +326,4 @@
 
     </LinearLayout>
 </ScrollView>
+
