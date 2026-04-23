@@ -26,9 +26,6 @@ import kotlin.math.abs
 // 🔥 CORE CONCEPTS (Autonomous & Safe)
 // =========================================================
 
-/**
- * Structural Fingerprint for strong causal detection
- */
 data class CausalFingerprint(
     val nodeCount: Int,
     val textHash: Long,
@@ -39,17 +36,15 @@ data class CausalFingerprint(
         val nodeDelta = abs(nodeCount - other.nodeCount)
         val textChanged = textHash != other.textHash
         val structureChanged = structureHash != other.structureHash
-        // Position change is less critical for content verification but good for scroll
         return nodeDelta > 0 || textChanged || structureChanged
     }
 }
 
-/**
- * Safe Node Wrapper to prevent double-recycle crashes
- */
 class NodeHandle(private val node: AccessibilityNodeInfo?) {
     private var consumed = false
-    fun <T> use(block: (AccessibilityNodeInfo) -> T): T? {
+    
+    // 👇 बदलाव 1: यहाँ 'inline' लगा दिया गया है ताकि suspend/delay काम करे
+    inline fun <T> use(block: (AccessibilityNodeInfo) -> T): T? {
         if (consumed || node == null) return null
         return try {
             block(node)
@@ -70,9 +65,6 @@ class NodeHandle(private val node: AccessibilityNodeInfo?) {
     }
 }
 
-/**
- * Execution Memory for state awareness
- */
 class ExecutionMemory {
     var lastActionId: String? = null
     var lastFingerprint: CausalFingerprint? = null
@@ -85,9 +77,6 @@ class ExecutionMemory {
     }
 }
 
-/**
- * Autonomous Decision Engine
- */
 sealed class ExecutionDecision {
     object RETRY : ExecutionDecision()
     object SCROLL : ExecutionDecision()
@@ -95,19 +84,14 @@ sealed class ExecutionDecision {
     object FAIL : ExecutionDecision()
 }
 
-/**
- * Interface for Gesture Dispatching
- */
-interface GestureDispatcher {    fun dispatchGesture(
+interface GestureDispatcher {    
+    fun dispatchGesture(
         gesture: android.accessibilityservice.GestureDescription,
         callback: android.accessibilityservice.AccessibilityService.GestureResultCallback?,
         handler: Handler?
     ): Boolean
 }
 
-/**
- * Engine Configuration
- */
 data class EngineConfig(
     val rowToleranceDp: Int = 48,
     val clickDelayMs: Long = 150L,
@@ -145,14 +129,10 @@ class WorkflowEngine(
     private val density = android.content.res.Resources.getSystem().displayMetrics.density
     private val ROW_TOLERANCE_PX = (config.rowToleranceDp * density).toInt()    
 
-    // ✅ System Layers
     private val backoffScheduler = AdaptiveBackoffScheduler()
     private val memory = ExecutionMemory()     
-    // ✅ Event Channel
     private val eventChannel = Channel<AccessibilityEvent>(capacity = 10, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     private var lastValidEventTime = 0L
-    
-    // ✅ Atomic Causal Context
     private val causalContext = AtomicReference<CausalContext?>(null)
 
     data class CausalContext(
@@ -161,9 +141,6 @@ class WorkflowEngine(
         val timestamp: Long
     )
 
-    // =========================================================
-    // 📥 REACTIVE LISTENER
-    // =========================================================
     fun startReactiveListening(eventFlow: MutableSharedFlow<AccessibilityEvent>) {
         engineScope.launch {
             eventFlow.collect { event ->
@@ -190,9 +167,6 @@ class WorkflowEngine(
         }
     }
 
-    // =========================================================
-    // 📦 CORE OPERATIONS
-    // =========================================================
     suspend fun loadRecording(list: List<RecordedStep>) = executionMutex.withLock {
         steps.clear()
         steps.addAll(list)
@@ -201,7 +175,7 @@ class WorkflowEngine(
         backoffScheduler.reset()
         memory.reset()
         causalContext.set(null)
-        Log.d("VMAX_FLOW", "📦 Loaded ${list.size} steps | Autonomous Agent Mode: ON")
+        Log.d("VMAX_FLOW", "📦 Loaded ${list.size} steps")
     }
 
     suspend fun reset() = executionMutex.withLock {
@@ -222,27 +196,21 @@ class WorkflowEngine(
     suspend fun onScreenChanged(): Boolean {
         return executionMutex.withLock {
             if (currentIndex >= steps.size) {
-                Log.d("VMAX_FLOW", "✅ All steps completed")
                 return@withLock true
             }
             val step = steps[currentIndex]
             executeStep(step).also { success ->
                 if (success) {
                     currentIndex++
-                    Log.d("VMAX_FLOW", "✅ Step[${step.id}] done | Next: $currentIndex/${steps.size}")
                 }
             }
         }
     }
 
-    // =========================================================
-    // 🎯 AUTONOMOUS EXECUTION LOOP
-    // =========================================================
     private suspend fun executeStep(step: RecordedStep): Boolean {        
         var attempts = 0
         val maxAttempts = step.maxRetries.coerceAtLeast(config.defaultMaxRetries)
 
-        // Capture pre-action state
         val rootHandle = NodeHandle.wrap(safeRoot())
         val preFingerprint = rootHandle.use { buildFingerprint(it) } ?: return false
         
@@ -256,11 +224,8 @@ class WorkflowEngine(
         while (attempts < maxAttempts && coroutineContext.isActive) {
             try {
                 val currentRootHandle = NodeHandle.wrap(safeRoot())
-                
-                // Resolve target node safely
                 val target = currentRootHandle.use { root -> resolveTargetNode(root, step) }
                 
-                // Execute Action
                 val actionSuccess = when (step.actionType) {
                     ActionType.CLICK -> target?.use { it.performAction(AccessibilityNodeInfo.ACTION_CLICK) } ?: false
                     ActionType.SCROLL -> currentRootHandle.use { smartScrollVerified(it, actionId) } ?: false
@@ -269,7 +234,6 @@ class WorkflowEngine(
                     else -> false
                 }
                 
-                // Make Autonomous Decision
                 val decision = makeDecision(attempts, maxAttempts, actionSuccess, step)                
                 
                 when (decision) {
@@ -282,12 +246,11 @@ class WorkflowEngine(
                         delay(backoffScheduler.nextDelay()) 
                     }
                     ExecutionDecision.SCROLL -> {
-                        // Attempt scroll as fallback
                         currentRootHandle.use { root ->
                             if (smartScrollVerified(root, actionId)) {
                                 attempts++ 
                             } else {
-                                attempts = maxAttempts // Force fail if scroll fails
+                                attempts = maxAttempts
                             }
                         }
                     }
@@ -300,28 +263,21 @@ class WorkflowEngine(
                 delay(backoffScheduler.nextDelay())
             }
         }
-        Log.e("VMAX_FLOW", "❌ Step[${step.id}] failed after $attempts attempts")
         return false
     }
 
-    // ✅ Autonomous Decision Logic
     private suspend fun makeDecision(attempt: Int, max: Int, actionSuccess: Boolean, step: RecordedStep): ExecutionDecision {
         if (!actionSuccess) {
-            // If action failed (e.g., node not found), decide next move
             return when {
-                attempt < max / 2 -> ExecutionDecision.RETRY // Try finding again
-                attempt < max -> ExecutionDecision.SCROLL   // Maybe it's below fold
+                attempt < max / 2 -> ExecutionDecision.RETRY
+                attempt < max -> ExecutionDecision.SCROLL
                 else -> ExecutionDecision.FAIL
             }
         }        
-        // Action succeeded, now verify
         val verified = verifyStepSuccess(step, memory.lastFingerprint!!)
         return if (verified) ExecutionDecision.SUCCESS else ExecutionDecision.RETRY
     }
 
-    // =========================================================
-    // 🛡 SAFE ROOT HANDLING
-    // =========================================================
     private fun safeRoot(): AccessibilityNodeInfo? {
         val root = getRoot() ?: return null
         return try { 
@@ -331,9 +287,6 @@ class WorkflowEngine(
         }
     }
 
-    // =========================================================
-    // 📸 STRONG CAUSAL FINGERPRINT
-    // =========================================================
     private fun buildFingerprint(root: AccessibilityNodeInfo): CausalFingerprint {
         val cursor = TreeCursor(root)
         var count = 0
@@ -362,9 +315,6 @@ class WorkflowEngine(
         return CausalFingerprint(count, textHash, structureHash, posHash)
     }
 
-    // =========================================================
-    // 🎯 TARGET RESOLUTION ENGINE
-    // =========================================================
     private fun resolveTargetNode(root: AccessibilityNodeInfo, step: RecordedStep): NodeHandle? {
         val selectors = step.getAllSelectors()
         
@@ -383,9 +333,6 @@ class WorkflowEngine(
         return null
     }
 
-    // =========================================================
-    // 📜 VERIFIED SCROLL (Causal ACK Pipeline)
-    // =========================================================
     private suspend fun smartScrollVerified(root: AccessibilityNodeInfo, actionId: String): Boolean {
         val scrollable = findScrollable(root) ?: return false
         try {
@@ -448,9 +395,6 @@ class WorkflowEngine(
         return null    
     }
 
-    // =========================================================
-    // 🔥 GESTURE ACK PIPELINE
-    // =========================================================
     private suspend fun executeGestureWithAck(
         gesture: android.accessibilityservice.GestureDescription,
         actionId: String,
@@ -481,9 +425,6 @@ class WorkflowEngine(
         } ?: false
     }
 
-    // =========================================================
-    // ✅ DECOUPLED VERIFICATION ENGINE
-    // =========================================================
     private suspend fun verifyStepSuccess(step: RecordedStep, oldFingerprint: CausalFingerprint): Boolean {
         return when (val strategy = step.verificationStrategy) {
             is VerificationStrategy.None -> true
@@ -523,9 +464,6 @@ class WorkflowEngine(
         }
     }
 
-    // =========================================================
-    // 🔥 CAUSAL EVENT WAITING
-    // =========================================================
     private suspend fun waitForCausalEvent(actionId: String, timeoutMs: Long): Boolean {
         val context = causalContext.get() ?: return false
         if (context.actionId != actionId) return false
@@ -552,9 +490,6 @@ class WorkflowEngine(
                (nodeDelta > 0 || textDelta || structureDelta)
     }
 
-    // =========================================================
-    // 🔍 NODE FINDERS (Clear Ownership)
-    // =========================================================
     private fun findNodeByContentDesc(root: AccessibilityNodeInfo, target: String): AccessibilityNodeInfo? {
         val queue = ArrayDeque<AccessibilityNodeInfo>(16)
         queue.addLast(root)
@@ -586,11 +521,28 @@ class WorkflowEngine(
         return target
     }
 
+    // 👇 बदलाव 2: ClassName से नोड ढूँढने का सही तरीका
     private fun findNodeByClassName(root: AccessibilityNodeInfo, cls: String): AccessibilityNodeInfo? {
-        val nodes = root.findAccessibilityNodeInfosByClassName(cls)
-        val target = nodes?.firstOrNull { it.isVisibleToUser }
-        nodes?.filter { it != target }?.forEach { it.recycle() }
-        return target
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.addLast(root)
+        try {
+            while (queue.isNotEmpty()) {
+                val current = queue.removeFirst()
+                if (current.className == cls && current.isVisibleToUser) {
+                    queue.forEach { if (it != current) it.recycle() }
+                    queue.clear()
+                    return AccessibilityNodeInfo.obtain(current)
+                }
+                for (i in 0 until current.childCount) {
+                    current.getChild(i)?.let { queue.addLast(it) }
+                }
+                if (current != root) current.recycle()
+            }
+        } finally {
+            queue.forEach { it.recycle() }
+            queue.clear()
+        }
+        return null
     }
 
     private fun findNode(root: AccessibilityNodeInfo, text: String): AccessibilityNodeInfo? {
@@ -625,9 +577,6 @@ class WorkflowEngine(
         return false
     }
 
-    // =========================================================
-    // ✅ TREE CURSOR (Iterative)
-    // =========================================================
     class TreeCursor(private val root: AccessibilityNodeInfo) {
         private val queue = ArrayDeque<AccessibilityNodeInfo>()
         private var nodesVisited = 0
@@ -661,9 +610,6 @@ class WorkflowEngine(
     }
 }
 
-// =========================================================
-// 🔥 ADAPTIVE BACKOFF SCHEDULER
-// =========================================================
 class AdaptiveBackoffScheduler {
     private var baseDelay = 100L
     private var attemptCount = 0
