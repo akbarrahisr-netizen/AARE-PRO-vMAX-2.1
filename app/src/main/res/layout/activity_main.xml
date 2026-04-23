@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView 
+    xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#121212"
@@ -10,6 +11,10 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:padding="16dp">
+
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- 🚂 TRAIN DETAILS SECTION -->
+        <!-- ═══════════════════════════════════════════════════════ -->
 
         <TextView
             android:layout_width="match_parent"
@@ -26,11 +31,14 @@
             android:layout_height="55dp"
             android:background="#2C2C2C"
             android:padding="12dp"
-            android:hint="Train Number (गाड़ी नंबर - 12487)"
+            android:hint="Train Number (गाड़ी नंबर - 12487)"
             android:textColorHint="#888888"
             android:inputType="number"
-            android:textColor="#FFFFFF" 
-            android:layout_marginBottom="12dp"/>
+            android:textColor="#FFFFFF"
+            android:layout_marginBottom="12dp"
+            android:importantForAutofill="no"
+            android:imeOptions="actionNext"
+            android:maxLines="1"/>
 
         <EditText
             android:id="@+id/etClass"
@@ -39,9 +47,33 @@
             android:background="#2C2C2C"
             android:padding="12dp"
             android:hint="Booking Class (क्लास - SL / 3A)"
+            android:textColorHint="#888888"            android:textColor="#FFFFFF"
+            android:layout_marginBottom="12dp"
+            android:importantForAutofill="no"
+            android:imeOptions="actionNext"
+            android:maxLines="1"
+            android:focusable="false"
+            android:clickable="true"
+            android:cursorVisible="false"/>
+
+        <EditText
+            android:id="@+id/etLatency"
+            android:layout_width="match_parent"
+            android:layout_height="55dp"
+            android:background="#2C2C2C"
+            android:padding="12dp"
+            android:hint="Ping/Latency offset (ms) e.g. 400"
             android:textColorHint="#888888"
-            android:textColor="#FFFFFF" 
-            android:layout_marginBottom="24dp"/>
+            android:inputType="number"
+            android:textColor="#FFFFFF"
+            android:layout_marginBottom="24dp"
+            android:importantForAutofill="no"
+            android:imeOptions="actionDone"
+            android:maxLines="1"/>
+
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- 👥 PASSENGERS SECTION -->
+        <!-- ═══════════════════════════════════════════════════════ -->
 
         <TextView
             android:layout_width="match_parent"
@@ -52,6 +84,7 @@
             android:textSize="16sp"
             android:layout_marginBottom="8dp"/>
 
+        <!-- ===== Passenger 1 ===== -->
         <EditText
             android:id="@+id/etName1"
             android:layout_width="match_parent"
@@ -60,13 +93,17 @@
             android:padding="12dp"
             android:hint="1. Passenger Name (नाम)"
             android:textColorHint="#888888"
-            android:textColor="#FFFFFF" 
-            android:layout_marginBottom="8dp"/>
+            android:textColor="#FFFFFF"
+            android:layout_marginBottom="8dp"
+            android:importantForAutofill="no"
+            android:imeOptions="actionNext"            android:maxLines="1"/>
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:layout_marginBottom="20dp">
+
             <EditText
                 android:id="@+id/etAge1"
                 android:layout_width="0dp"
@@ -78,7 +115,11 @@
                 android:hint="Age (उम्र)"
                 android:textColorHint="#888888"
                 android:inputType="number"
-                android:textColor="#FFFFFF" />
+                android:textColor="#FFFFFF"
+                android:importantForAutofill="no"
+                android:imeOptions="actionNext"
+                android:maxLines="1"/>
+
             <EditText
                 android:id="@+id/etGender1"
                 android:layout_width="0dp"
@@ -88,24 +129,35 @@
                 android:padding="12dp"
                 android:hint="Gender (M/F)"
                 android:textColorHint="#888888"
-                android:textColor="#FFFFFF" />
+                android:textColor="#FFFFFF"
+                android:focusable="false"
+                android:clickable="true"
+                android:cursorVisible="false"
+                android:importantForAutofill="no"
+                android:imeOptions="actionNext"
+                android:maxLines="1"/>
         </LinearLayout>
 
+        <!-- ===== Passenger 2 ===== -->
         <EditText
             android:id="@+id/etName2"
             android:layout_width="match_parent"
             android:layout_height="55dp"
             android:background="#2C2C2C"
             android:padding="12dp"
-            android:hint="2. Passenger Name (Optional)"
-            android:textColorHint="#888888"
-            android:textColor="#FFFFFF" 
-            android:layout_marginBottom="8dp"/>
+            android:hint="2. Passenger Name (Optional)"            android:textColorHint="#888888"
+            android:textColor="#FFFFFF"
+            android:layout_marginBottom="8dp"
+            android:importantForAutofill="no"
+            android:imeOptions="actionNext"
+            android:maxLines="1"/>
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:layout_marginBottom="20dp">
+
             <EditText
                 android:id="@+id/etAge2"
                 android:layout_width="0dp"
@@ -117,7 +169,11 @@
                 android:hint="Age"
                 android:textColorHint="#888888"
                 android:inputType="number"
-                android:textColor="#FFFFFF" />
+                android:textColor="#FFFFFF"
+                android:importantForAutofill="no"
+                android:imeOptions="actionNext"
+                android:maxLines="1"/>
+
             <EditText
                 android:id="@+id/etGender2"
                 android:layout_width="0dp"
@@ -127,24 +183,35 @@
                 android:padding="12dp"
                 android:hint="Gender"
                 android:textColorHint="#888888"
-                android:textColor="#FFFFFF" />
+                android:textColor="#FFFFFF"
+                android:focusable="false"
+                android:clickable="true"
+                android:cursorVisible="false"
+                android:importantForAutofill="no"
+                android:imeOptions="actionNext"
+                android:maxLines="1"/>
         </LinearLayout>
 
+        <!-- ===== Passenger 3 ===== -->
         <EditText
-            android:id="@+id/etName3"
-            android:layout_width="match_parent"
+            android:id="@+id/etName3"            android:layout_width="match_parent"
             android:layout_height="55dp"
             android:background="#2C2C2C"
             android:padding="12dp"
             android:hint="3. Passenger Name (Optional)"
             android:textColorHint="#888888"
-            android:textColor="#FFFFFF" 
-            android:layout_marginBottom="8dp"/>
+            android:textColor="#FFFFFF"
+            android:layout_marginBottom="8dp"
+            android:importantForAutofill="no"
+            android:imeOptions="actionNext"
+            android:maxLines="1"/>
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:layout_marginBottom="20dp">
+
             <EditText
                 android:id="@+id/etAge3"
                 android:layout_width="0dp"
@@ -156,7 +223,11 @@
                 android:hint="Age"
                 android:textColorHint="#888888"
                 android:inputType="number"
-                android:textColor="#FFFFFF" />
+                android:textColor="#FFFFFF"
+                android:importantForAutofill="no"
+                android:imeOptions="actionNext"
+                android:maxLines="1"/>
+
             <EditText
                 android:id="@+id/etGender3"
                 android:layout_width="0dp"
@@ -166,9 +237,15 @@
                 android:padding="12dp"
                 android:hint="Gender"
                 android:textColorHint="#888888"
-                android:textColor="#FFFFFF" />
-        </LinearLayout>
+                android:textColor="#FFFFFF"
+                android:focusable="false"
+                android:clickable="true"
+                android:cursorVisible="false"
+                android:importantForAutofill="no"
+                android:imeOptions="actionNext"
+                android:maxLines="1"/>        </LinearLayout>
 
+        <!-- ===== Passenger 4 ===== -->
         <EditText
             android:id="@+id/etName4"
             android:layout_width="match_parent"
@@ -177,13 +254,18 @@
             android:padding="12dp"
             android:hint="4. Passenger Name (Optional)"
             android:textColorHint="#888888"
-            android:textColor="#FFFFFF" 
-            android:layout_marginBottom="8dp"/>
+            android:textColor="#FFFFFF"
+            android:layout_marginBottom="8dp"
+            android:importantForAutofill="no"
+            android:imeOptions="actionNext"
+            android:maxLines="1"/>
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:layout_marginBottom="32dp">
+
             <EditText
                 android:id="@+id/etAge4"
                 android:layout_width="0dp"
@@ -195,7 +277,11 @@
                 android:hint="Age"
                 android:textColorHint="#888888"
                 android:inputType="number"
-                android:textColor="#FFFFFF" />
+                android:textColor="#FFFFFF"
+                android:importantForAutofill="no"
+                android:imeOptions="actionNext"
+                android:maxLines="1"/>
+
             <EditText
                 android:id="@+id/etGender4"
                 android:layout_width="0dp"
@@ -205,8 +291,17 @@
                 android:padding="12dp"
                 android:hint="Gender"
                 android:textColorHint="#888888"
-                android:textColor="#FFFFFF" />
+                android:textColor="#FFFFFF"
+                android:focusable="false"                android:clickable="true"
+                android:cursorVisible="false"
+                android:importantForAutofill="no"
+                android:imeOptions="actionDone"
+                android:maxLines="1"/>
         </LinearLayout>
+
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- 🎯 ACTION BUTTONS -->
+        <!-- ═══════════════════════════════════════════════════════ -->
 
         <Button
             android:id="@+id/btnSaveProfile"
@@ -217,7 +312,7 @@
             android:textSize="18sp"
             android:textStyle="bold"
             android:layout_marginBottom="8dp"
-            android:backgroundTint="#5E35B1" />
+            android:backgroundTint="#5E35B1"/>
 
         <TextView
             android:id="@+id/tvProfileStatus"
@@ -227,18 +322,18 @@
             android:textColor="#7E57C2"
             android:textSize="14sp"
             android:gravity="center"
-            android:layout_marginBottom="16dp" />
+            android:layout_marginBottom="16dp"/>
 
         <Button
             android:id="@+id/btnStartIrctc"
             android:layout_width="match_parent"
             android:layout_height="65dp"
-            android:text="🚀 START &amp; OPEN IRCTC"
+            android:text="🚀 START & OPEN IRCTC"
             android:textColor="#FFFFFF"
             android:textSize="18sp"
             android:textStyle="bold"
             android:layout_marginBottom="30dp"
-            android:backgroundTint="#2E7D32" />
+            android:backgroundTint="#2E7D32"/>
 
     </LinearLayout>
 </ScrollView>
