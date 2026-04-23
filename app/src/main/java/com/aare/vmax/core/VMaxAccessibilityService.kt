@@ -60,6 +60,7 @@ class VMAXAccessibilityService : AccessibilityService() {
     private var captchaPaused = false
     private var hasClickedReview = false
     private var isCurrentlyFilling = false
+    private var hasClickedRefresh = false // ✅ FIX: यह लाइन जुड़ गई है!
 
     // ═══════════════════════════════════════════════════════
     // 📡 BROADCAST RECEIVER (START Command)
@@ -572,6 +573,7 @@ class VMAXAccessibilityService : AccessibilityService() {
         captchaPaused = false
         hasClickedReview = false
         isCurrentlyFilling = false
+        hasClickedRefresh = false // ✅ FIX: इसे भी रीसेट कर दिया
         lastActionTime = 0
         Log.d(TAG, "🔄 Automation reset")
     }
