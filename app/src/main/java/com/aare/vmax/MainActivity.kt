@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Button
 import android.widget.EditText
@@ -34,7 +36,8 @@ class MainActivity : AppCompatActivity() {
     
     companion object {
         private const val PREFS_NAME = "VMaxProfile"
-        private const val SERVICE_CLASS_NAME = "VMAXAccessibilityService"  // ✅ Used now
+        // ✅ Full path of the service class (Crucial for accurate check)
+        private const val SERVICE_CLASS_NAME = "com.aare.vmax.VMAXAccessibilityService"
     }
     
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,6 +47,15 @@ class MainActivity : AppCompatActivity() {
         initViews()
         loadSavedData()
         setupClickListeners()
+        
+        // ✅ नई बैटरी ऑप्टिमाइज़ेशन चेक करो
+        checkAndRequestBatteryOptimization()
+        
+        // ✅ चाइनीज फोन्स के लिए ऑटो-स्टार्ट गाइड (पहली बार में)
+        if (isFirstTimeUser()) {
+            showSystemOptimizationGuide()
+            markFirstTimeUserDone()
+        }
     }
     
     private fun initViews() {
@@ -184,7 +196,7 @@ class MainActivity : AppCompatActivity() {
         val gender = genderView.text.toString().trim()
         
         if (name.isNotEmpty() && ageText.isNotEmpty() && gender.isNotEmpty()) {
-            // Name validation (4-16 characters)
+            // ✅ नाम की लंबाई (4-16)
             if (name.length < 4) {
                 nameView.error = "नाम कम से कम 4 अक्षर का होना चाहिए"
                 nameView.requestFocus()
@@ -196,7 +208,7 @@ class MainActivity : AppCompatActivity() {
                 return
             }
 
-            // Age validation (1-199)
+            // ✅ उम्र (1-199)
             val age = ageText.toIntOrNull()
             if (age == null || age < 1 || age > 199) {
                 ageView.error = "उम्र 1 से 199 के बीच होनी चाहिए"
@@ -204,7 +216,7 @@ class MainActivity : AppCompatActivity() {
                 return
             }
 
-            // Gender validation
+            // ✅ जेंडर
             val validGenders = listOf("Male", "Female", "Transgender", "M", "F")
             if (gender !in validGenders && !gender.startsWith("M", ignoreCase = true) && 
                 !gender.startsWith("F", ignoreCase = true)) {
@@ -218,6 +230,108 @@ class MainActivity : AppCompatActivity() {
             ageView.error = null
             genderView.error = null
         }
+    }
+    
+    // ✅ बैटरी ऑप्टिमाइज़ेशन से छूट (सिस्टम से लड़ने का पहला हथियार)
+    private fun checkAndRequestBatteryOptimization() {
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val packageName = packageName
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                tvProfileStatus.text = "⚠️ बैटरी ऑप्टिमाइज़ेशन बंद करें!"
+                tvProfileStatus.setTextColor(getColor(android.R.color.holo_orange_dark))
+                
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                intent.data = Uri.parse("package:$packageName")
+                startActivity(intent)
+            }
+        }
+    }
+    
+    // ✅ चाइनीज फोन्स के लिए ऑटो-स्टार्ट गाइड
+    private fun requestAutoStartPermission() {
+        val manufacturer = android.os.Build.MANUFACTURER.lowercase()
+        
+        when {
+            manufacturer.contains("xiaomi") -> {
+                try {
+                    val intent = Intent("miui.intent.action.OP_AUTO_START")
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    openAccessibilitySettings()
+                }
+            }
+            manufacturer.contains("oppo") || manufacturer.contains("realme") -> {
+                try {
+                    val intent = Intent()
+                    intent.component = android.content.ComponentName(
+                        "com.coloros.safecenter",
+                        "com.coloros.safecenter.permission.startup.StartupAppListActivity"
+                    )
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    openAccessibilitySettings()
+                }
+            }
+            manufacturer.contains("vivo") -> {
+                try {
+                    val intent = Intent()
+                    intent.component = android.content.ComponentName(
+                        "com.vivo.permissionmanager",
+                        "com.vivo.permissionmanager.activity.SoftPermissionDetailActivity"
+                    )
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    openAccessibilitySettings()
+                }
+            }
+        }
+    }
+    
+    // ✅ नए यूजर को सेटिंग्स बताने के लिए
+    private fun isFirstTimeUser(): Boolean {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return !prefs.getBoolean("settings_guide_shown", false)
+    }
+    
+    private fun markFirstTimeUserDone() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("settings_guide_shown", true).apply()
+    }
+    
+    private fun showSystemOptimizationGuide() {
+        val manufacturer = android.os.Build.MANUFACTURER
+        val message = when {
+            manufacturer.contains("Xiaomi", ignoreCase = true) -> 
+                "📍 Settings → Apps → VMAX Pro → Autostart → Enable\n" +
+                "📍 Settings → Battery → App battery saver → No restrictions"
+            
+            manufacturer.contains("Oppo", ignoreCase = true) || 
+            manufacturer.contains("Realme", ignoreCase = true) -> 
+                "📍 Settings → Apps → App management → VMAX Pro → Autostart → Enable\n" +
+                "📍 Settings → Battery → Optimize battery → VMAX Pro → Don't optimize"
+            
+            manufacturer.contains("Vivo", ignoreCase = true) -> 
+                "📍 Settings → More settings → Permissions → Autostart → Enable VMAX\n" +
+                "📍 Settings → Battery → Background app restrictions → Allow"
+            
+            else -> 
+                "📍 Settings → Apps → VMAX Pro → Battery → Unrestricted\n" +
+                "📍 Recent Apps → Long press VMAX Pro → Lock the app"
+        }
+        
+        android.app.AlertDialog.Builder(this)
+            .setTitle("⚡ IMPORTANT: System Optimization Settings")
+            .setMessage(message)
+            .setPositiveButton("Got it!") { _, _ -> 
+                requestAutoStartPermission()
+            }
+            .setCancelable(true)
+            .show()
     }
     
     private fun startIrctcAutomation() {
@@ -234,21 +348,33 @@ class MainActivity : AppCompatActivity() {
             return
         }
         
-        tvProfileStatus.text = "🚀 IRCTC खुल रहा है... कमर कस लो उस्ताद! 🔥"
+        tvProfileStatus.text = "🚀 IRCTC खुल रहा है... अगर बंद हो जाए तो ऐप को 'लॉक' कर दें! 🔥"
         tvProfileStatus.setTextColor(getColor(android.R.color.holo_green_dark))
+        
         openIrctcApp()
     }
     
-    // ✅ FINAL FIX: Using SERVICE_CLASS_NAME for 100% accuracy
+    // ✅ सटीक सर्विस चेक (पूरा रास्ता + SimpleStringSplitter)
     private fun isAccessibilityServiceEnabled(): Boolean {
+        val expectedService = SERVICE_CLASS_NAME
         val enabledServices = Settings.Secure.getString(
             contentResolver, 
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         ) ?: return false
         
-        // Exact service name check (सबसे सटीक तरीका)
-        val exactServiceName = "$packageName/$SERVICE_CLASS_NAME"
-        return enabledServices.contains(exactServiceName)
+        val splitter = android.text.TextUtils.SimpleStringSplitter(':')
+        splitter.setString(enabledServices)
+        
+        while (splitter.hasNext()) {
+            val enabledService = splitter.next()
+            if (enabledService.equals(expectedService, ignoreCase = true)) {
+                return true
+            }
+            if (enabledService.contains(packageName, ignoreCase = true)) {
+                return true
+            }
+        }
+        return false
     }
     
     private fun openAccessibilitySettings() {
@@ -256,9 +382,10 @@ class MainActivity : AppCompatActivity() {
         startActivity(intent)
     }
     
+    // ✅ IRCTC लॉन्चर (3 पैकेज + फ्लैग्स + प्ले स्टोर फॉलबैक)
     private fun openIrctcApp() {
         val irctcPackages = arrayOf(
-            "cris.org.in.prs.ima",      // असली और लेटेस्ट ऐप
+            "cris.org.in.prs.ima",      // असली IRCTC Rail Connect
             "com.irctc.railconnect",    // पुराना वर्जन
             "in.irctc.railconnect"      // बीटा वर्जन
         )
