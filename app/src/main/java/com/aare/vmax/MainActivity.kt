@@ -1,5 +1,6 @@
 package com.aare.vmax
 
+import android.app.Activity // ✅ AppCompatActivity को हटाकर इसे डाल दिया है
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -15,12 +16,12 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.aare.vmax.core.orchestrator.PassengerData
 import java.util.Calendar
 
-class MainActivity : AppCompatActivity() {
+// ✅ यहाँ भी बदलाव कर दिया है
+class MainActivity : Activity() {
 
     // ═══════════════════════════════════════════════════════
     // 📱 UI COMPONENTS
@@ -286,6 +287,10 @@ class MainActivity : AppCompatActivity() {
         displayTargetTime(config)
 
         // ✅ सीधा लॉन्च! कोई Delay नहीं। रॉकेट की तरह उड़ेगा।
+        val intent = Intent("com.aare.vmax.ACTION_START_AUTOMATION")
+        intent.setPackage(packageName)
+        sendBroadcast(intent)
+        
         launchIrctcApp()
     }
 
