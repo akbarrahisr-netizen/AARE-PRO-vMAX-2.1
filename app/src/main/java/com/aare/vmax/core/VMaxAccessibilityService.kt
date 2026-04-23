@@ -21,7 +21,7 @@ class VMaxAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        Log.d("VMAX_SERVICE", "🔌 Service Connected")
+        Log.d("VMAX_SERVICE", "Service Connected")
 
         serviceScope.launch {
             val gestureDispatcher = object : GestureDispatcher {
@@ -34,23 +34,17 @@ class VMaxAccessibilityService : AccessibilityService() {
                 }
             }
 
+            // बिना नाम (named parameters) के सीधे वैल्यू भेज रहे हैं
             engine = WorkflowEngine(
-                getRoot = { rootInActiveWindow },
-                gestureDispatcher = gestureDispatcher,
-                engineScope = serviceScope
+                { rootInActiveWindow },
+                gestureDispatcher,
+                EngineConfig(),
+                serviceScope
             )
 
-            orchestrator = AutomationOrchestrator(
-                engine = engine!!,
-                scope = serviceScope
-            )
+            orchestrator = AutomationOrchestrator(engine!!, serviceScope)
 
-            panelManager = FloatingPanelManager(
-                context = this@VMaxAccessibilityService,
-                workflowEngine = engine!!, // 👈 यहाँ 'engine' की जगह 'workflowEngine' कर दिया गया है
-                orchestrator = orchestrator!!,
-                scope = serviceScope
-            )
+            panelManager = FloatingPanelManager(this@VMaxAccessibilityService, engine!!, orchestrator!!, serviceScope)
 
             engine?.startReactiveListening(orchestrator!!.eventFlow)
             isInitialized.set(true)
