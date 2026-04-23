@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#121212"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🚂 TRAIN DETAILS"
+            android:textColor="#7E57C2"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:layout_marginBottom="8dp"/>
+
+        <EditText
+            android:id="@+id/etTrainNumber"
+            android:layout_width="match_parent"
+            android:layout_height="55dp"
+            android:background="#2C2C2C"
+            android:padding="12dp"
+            android:hint="Train Number (गाड़ी नंबर - 12487)"
+            android:textColorHint="#888888"
+            android:inputType="number"
+            android:textColor="#FFFFFF" 
+            android:layout_marginBottom="12dp"/>
+
+        <EditText
+            android:id="@+id/etClass"
+            android:layout_width="match_parent"
+            android:layout_height="55dp"
+            android:background="#2C2C2C"
+            android:padding="12dp"
+            android:hint="Booking Class (क्लास - SL / 3A)"
+            android:textColorHint="#888888"
+            android:textColor="#FFFFFF" 
+            android:layout_marginBottom="24dp"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="👥 PASSENGERS"
+            android:textColor="#7E57C2"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:layout_marginBottom="8dp"/>
+
+        <EditText
+            android:id="@+id/etName1"
+            android:layout_width="match_parent"
+            android:layout_height="55dp"
+            android:background="#2C2C2C"
+            android:padding="12dp"
+            android:hint="1. Passenger Name (नाम)"
+            android:textColorHint="#888888"
+            android:textColor="#FFFFFF" 
+            android:layout_marginBottom="8dp"/>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="20dp">
+            <EditText
+                android:id="@+id/etAge1"
+                android:layout_width="0dp"
+                android:layout_height="55dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:background="#2C2C2C"
+                android:padding="12dp"
+                android:hint="Age (उम्र)"
+                android:textColorHint="#888888"
+                android:inputType="number"
+                android:textColor="#FFFFFF" />
+            <EditText
+                android:id="@+id/etGender1"
+                android:layout_width="0dp"
+                android:layout_height="55dp"
+                android:layout_weight="1"
+                android:background="#2C2C2C"
+                android:padding="12dp"
+                android:hint="Gender (M/F)"
+                android:textColorHint="#888888"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
+
+        <EditText
+            android:id="@+id/etName2"
+            android:layout_width="match_parent"
+            android:layout_height="55dp"
+            android:background="#2C2C2C"
+            android:padding="12dp"
+            android:hint="2. Passenger Name (Optional)"
+            android:textColorHint="#888888"
+            android:textColor="#FFFFFF" 
+            android:layout_marginBottom="8dp"/>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="20dp">
+            <EditText
+                android:id="@+id/etAge2"
+                android:layout_width="0dp"
+                android:layout_height="55dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:background="#2C2C2C"
+                android:padding="12dp"
+                android:hint="Age"
+                android:textColorHint="#888888"
+                android:inputType="number"
+                android:textColor="#FFFFFF" />
+            <EditText
+                android:id="@+id/etGender2"
+                android:layout_width="0dp"
+                android:layout_height="55dp"
+                android:layout_weight="1"
+                android:background="#2C2C2C"
+                android:padding="12dp"
+                android:hint="Gender"
+                android:textColorHint="#888888"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
+
+        <EditText
+            android:id="@+id/etName3"
+            android:layout_width="match_parent"
+            android:layout_height="55dp"
+            android:background="#2C2C2C"
+            android:padding="12dp"
+            android:hint="3. Passenger Name (Optional)"
+            android:textColorHint="#888888"
+            android:textColor="#FFFFFF" 
+            android:layout_marginBottom="8dp"/>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="20dp">
+            <EditText
+                android:id="@+id/etAge3"
+                android:layout_width="0dp"
+                android:layout_height="55dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:background="#2C2C2C"
+                android:padding="12dp"
+                android:hint="Age"
+                android:textColorHint="#888888"
+                android:inputType="number"
+                android:textColor="#FFFFFF" />
+            <EditText
+                android:id="@+id/etGender3"
+                android:layout_width="0dp"
+                android:layout_height="55dp"
+                android:layout_weight="1"
+                android:background="#2C2C2C"
+                android:padding="12dp"
+                android:hint="Gender"
+                android:textColorHint="#888888"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
+
+        <EditText
+            android:id="@+id/etName4"
+            android:layout_width="match_parent"
+            android:layout_height="55dp"
+            android:background="#2C2C2C"
+            android:padding="12dp"
+            android:hint="4. Passenger Name (Optional)"
+            android:textColorHint="#888888"
+            android:textColor="#FFFFFF" 
+            android:layout_marginBottom="8dp"/>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="32dp">
+            <EditText
+                android:id="@+id/etAge4"
+                android:layout_width="0dp"
+                android:layout_height="55dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:background="#2C2C2C"
+                android:padding="12dp"
+                android:hint="Age"
+                android:textColorHint="#888888"
+                android:inputType="number"
+                android:textColor="#FFFFFF" />
+            <EditText
+                android:id="@+id/etGender4"
+                android:layout_width="0dp"
+                android:layout_height="55dp"
+                android:layout_weight="1"
+                android:background="#2C2C2C"
+                android:padding="12dp"
+                android:hint="Gender"
+                android:textColorHint="#888888"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnSaveProfile"
+            android:layout_width="match_parent"
+            android:layout_height="65dp"
+            android:text="💾 SAVE FULL PROFILE"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp"
+            android:backgroundTint="#5E35B1" />
+
+        <TextView
+            android:id="@+id/tvProfileStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Status: Waiting to Save..."
+            android:textColor="#7E57C2"
+            android:textSize="14sp"
+            android:gravity="center"
+            android:layout_marginBottom="16dp" />
+
+        <Button
+            android:id="@+id/btnStartIrctc"
+            android:layout_width="match_parent"
+            android:layout_height="65dp"
+            android:text="🚀 START &amp; OPEN IRCTC"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="30dp"
+            android:backgroundTint="#2E7D32" />
+
+    </LinearLayout>
+</ScrollView>
