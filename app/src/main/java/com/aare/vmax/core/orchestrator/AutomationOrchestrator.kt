@@ -6,6 +6,7 @@ import android.view.accessibility.AccessibilityEvent
 import com.aare.vmax.core.models.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -19,8 +20,9 @@ class AutomationOrchestrator(
     private val scope: CoroutineScope,
     private val onStatusChanged: ((String) -> Unit)? = null
 ) {
-    // ✅ सर्विस फाइल के साथ मैच करने के लिए MutableSharedFlow
-    val eventFlow = MutableSharedFlow<AccessibilityEvent>(extraBufferCapacity = 10)
+    // ✅ एरर फिक्स: MutableSharedFlow को सही तरीके से डिफाइन किया
+    private val _eventFlow = MutableSharedFlow<AccessibilityEvent>(extraBufferCapacity = 10)
+    val eventFlow = _eventFlow.asSharedFlow()
 
     private var isRunning = false
     private val lock = Mutex()
@@ -42,7 +44,6 @@ class AutomationOrchestrator(
         val ctx = ctxRef?.get() ?: return@withLock false
         val prefs = ctx.getSharedPreferences("VMaxProfile", Context.MODE_PRIVATE)
 
-        // मेमोरी से ट्रेन और पैसेंजर डेटा उठाओ
         val trainNum = prefs.getString("train", "") ?: ""
         val bClass = prefs.getString("class", "SL") ?: "SL"
         val passengers = mutableListOf<PassengerData>()
@@ -55,11 +56,10 @@ class AutomationOrchestrator(
         }
 
         if (passengers.isEmpty()) {
-            update("❌ No Passengers Found")
+            update("❌ No Passengers")
             return@withLock false
         }
 
-        // स्टेप्स बनाओ और इंजन को दो
         val steps = buildSteps(trainNum, bClass, passengers)
         engine.loadRecording(steps)
         isRunning = true
@@ -69,9 +69,15 @@ class AutomationOrchestrator(
     }
 
     suspend fun reset() = lock.withLock {
-        engine.reset()
+        try { engine.reset() } catch (e: Exception) { }
         isRunning = false
         update("⏹ Stopped")
+    }
+
+    // ✅ एरर फिक्स: सर्विस फाइल को 'shutdown' फंक्शन मिल जाएगा
+    fun shutdown() {
+        isRunning = false
+        ctxRef?.clear()
     }
 
     private fun update(msg: String) {
@@ -81,22 +87,17 @@ class AutomationOrchestrator(
     private fun buildSteps(train: String, bClass: String, passengers: List<PassengerData>): List<RecordedStep> {
         val steps = mutableListOf<RecordedStep>()
 
-        // 🎯 स्टेप 1: सही ट्रेन के नीचे वाली क्लास (SL/3A) पर क्लिक करो
+        // ट्रेन के आधार पर सही क्लास पर क्लिक
         steps.add(RecordedStep(
             id = "click_class",
             actionType = ActionType.CLICK,
             criteria = bClass,
-            anchorText = train, // 👈 यह इंजन को सही ट्रेन पर रखेगा
+            anchorText = train,
             maxRetries = 10,
             postActionDelayMs = 400
         ))
 
-        steps.add(RecordedStep(
-            id = "click_details",
-            actionType = ActionType.CLICK,
-            criteria = "PASSENGER DETAILS",
-            postActionDelayMs = 400
-        ))
+        steps.add(RecordedStep(id = "click_details", actionType = ActionType.CLICK, criteria = "PASSENGER DETAILS", postActionDelayMs = 400))
 
         passengers.forEachIndexed { i, p ->
             steps.add(RecordedStep(id = "add_$i", actionType = ActionType.CLICK, criteria = "+ Add New", postActionDelayMs = 300))
