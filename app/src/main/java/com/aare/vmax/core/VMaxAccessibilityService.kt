@@ -12,50 +12,99 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class VMaxAccessibilityService : AccessibilityService() {
 
-    private val serviceJob = SupervisorJob()
-    private val serviceScope = CoroutineScope(Dispatchers.Default + serviceJob)
-    private val mainScope = CoroutineScope(Dispatchers.Main + serviceJob)
+    // Single unified scope (FIXED)
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private lateinit var engine: WorkflowEngine
-    private lateinit var orchestrator: AutomationOrchestrator
-    private lateinit var panelManager: FloatingPanelManager
-    private val isListening = AtomicBoolean(false)
+    private val isInitialized = AtomicBoolean(false)
+
+    // safer null handling instead of lateinit
+    private var engine: WorkflowEngine? = null
+    private var orchestrator: AutomationOrchestrator? = null
+    private var panelManager: FloatingPanelManager? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        Log.d("VMAX_SERVICE", "🔌 Connected")
+        Log.d("VMAX_SERVICE", "🔌 Service Connected")
 
-        engine = WorkflowEngine(
-            getRoot = { rootInActiveWindow },
-            gestureDispatcher = object : GestureDispatcher {
-                override fun dispatchGesture(g: GestureDescription, c: GestureResultCallback?, h: Handler?): Boolean {
-                    return this@VMaxAccessibilityService.dispatchGesture(g, c, h)
+        serviceScope.launch {
+
+            // Gesture dispatcher bridge
+            val gestureDispatcher = object : GestureDispatcher {
+                override fun dispatchGesture(
+                    gesture: GestureDescription,
+                    callback: GestureResultCallback?,
+                    handler: Handler?
+                ): Boolean {
+                    return this@VMaxAccessibilityService.dispatchGesture(
+                        gesture,
+                        callback,
+                        handler
+                    )
                 }
-            },
-            engineScope = serviceScope
-        )
+            }
 
-        orchestrator = AutomationOrchestrator(engine, serviceScope)
-        panelManager = FloatingPanelManager(this, engine, orchestrator, serviceScope)
+            // INIT ENGINE
+            engine = WorkflowEngine(
+                getRoot = { rootInActiveWindow },
+                gestureDispatcher = gestureDispatcher,
+                engineScope = serviceScope
+            )
 
-        if (isListening.compareAndSet(false, true)) {
-            engine.startReactiveListening(orchestrator.eventFlow)
+            // INIT ORCHESTRATOR
+            orchestrator = AutomationOrchestrator(
+                engine = engine!!,
+                scope = serviceScope
+            )
+
+            // INIT PANEL (UI safe) - 'context' used instead of 'service' to prevent parameter name mismatch
+            panelManager = FloatingPanelManager(
+                context = this@VMaxAccessibilityService,
+                engine = engine!!,
+                orchestrator = orchestrator!!,
+                scope = serviceScope
+            )
+
+            // Start reactive flow safely
+            engine?.startReactiveListening(orchestrator!!.eventFlow)
+
+            isInitialized.set(true)
+
+            withContext(Dispatchers.Main) {
+                try {
+                    panelManager?.show()
+                } catch (e: Exception) {
+                    Log.e("VMAX_SERVICE", "UI Error", e)
+                }
+            }
         }
-
-        mainScope.launch { try { panelManager.show() } catch(e: Exception) {} }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        event?.let {
-            if (::engine.isInitialized) engine.notifyEvent(it)
-            if (::orchestrator.isInitialized) orchestrator.onAccessibilityEvent(it)
+        if (event == null || !isInitialized.get()) return
+
+        // IMPORTANT: off main thread processing
+        serviceScope.launch {
+            engine?.notifyEvent(event)
+            orchestrator?.onAccessibilityEvent(event)
         }
     }
 
-    override fun onInterrupt() {}
+    override fun onInterrupt() {
+        Log.d("VMAX_SERVICE", "⚠️ Service Interrupted")
+    }
 
     override fun onDestroy() {
-        serviceJob.cancel()
+        Log.d("VMAX_SERVICE", "🛑 Service Destroyed")
+
+        try {
+            panelManager?.remove()
+            engine?.shutdown()
+            orchestrator?.shutdown()
+        } catch (e: Exception) {
+            Log.e("VMAX_SERVICE", "Shutdown Error", e)
+        }
+
+        serviceScope.cancel()
         super.onDestroy()
     }
 }
