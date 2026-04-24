@@ -1,84 +1,88 @@
-package com.aare.vmax.ui
+package com.aare.vmax.ui.components
 
-import androidx.compose.foundation.border
+import androidx.compose.foundation.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.ui.*
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import com.aare.vmax.core.model.PassengerData
+import com.aare.vmax.ui.theme.VMaxColors
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PassengerCard(index: Int, passenger: PassengerData) {
-    // 💜 उस्ताद, यही है वो असली बैंगनी डब्बा जिसमें ६ ऑप्शंस फिट हैं
-    Card(
-        modifier = Modifier
+fun PassengerCard(
+    passenger: PassengerData,
+    passengerIndex: Int,
+    onUpdate: (PassengerData) -> Unit,
+    onRemove: () -> Unit, // ✅ रिमूव फंक्शन जोड़ा
+    modifier: Modifier = Modifier
+) {
+    val colors = VMaxColors.current
+    
+    Column(
+        modifier = modifier
             .fillMaxWidth()
-            .padding(8.dp)
-            .border(2.dp, Color(0xFF8A2BE2), RoundedCornerShape(12.dp)), // नियॉन बैंगनी बॉर्डर
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A)) // डार्क थीम
+            .padding(vertical = 8.dp)
+            .border(1.5.dp, colors.accent, RoundedCornerShape(16.dp))
+            .background(colors.cardBg, RoundedCornerShape(16.dp))
+            .padding(16.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "PASSENGER $index",
-                color = Color(0xFF8A2BE2),
-                fontWeight = FontWeight.Bold
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("👤 Passenger ${passengerIndex + 1}", color = colors.accent)
+            if (passengerIndex > 0) { // कम से कम 1 पैसेंजर रहना चाहिए
+                IconButton(onClick = onRemove, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Default.Close, "Remove", tint = colors.error)
+                }
+            }
+        }
+        
+        Spacer(Modifier.height(8.dp))
+        
+        // ✍️ Name & Age
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = passenger.name,
+                onValueChange = { onUpdate(passenger.copy(name = it)) },
+                label = { Text("Name") },
+                modifier = Modifier.weight(0.6f)
             )
+            OutlinedTextField(
+                value = passenger.age,
+                onValueChange = { onUpdate(passenger.copy(age = it)) },
+                label = { Text("Age") },
+                modifier = Modifier.weight(0.4f)
+            )
+        }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // १. नाम (Name) और २. उम्र (Age) के इनपुट बॉक्स
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = passenger.name,
-                    onValueChange = { passenger.name = it },
-                    label = { Text("Name", color = Color.Gray) },
-                    modifier = Modifier.weight(2f),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFF8A2BE2),
-                        unfocusedBorderColor = Color.DarkGray,
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    )
-                )
-                OutlinedTextField(
-                    value = passenger.age,
-                    onValueChange = { passenger.age = it },
-                    label = { Text("Age", color = Color.Gray) },
-                    modifier = Modifier.weight(1f),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFF8A2BE2),
-                        unfocusedBorderColor = Color.DarkGray,
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    )
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // ३, ४, ५. जेंडर, बर्थ और मील (अभी टेक्स्ट में, बाद में ड्रॉपडाउन करेंगे)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("⚧ ${passenger.gender}", color = Color.LightGray, modifier = Modifier.weight(1f))
-                Text("💺 ${passenger.berthPref}", color = Color.LightGray, modifier = Modifier.weight(1f))
-                Text("🍱 ${passenger.mealPref}", color = Color.LightGray, modifier = Modifier.weight(1f))
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // ६. बेड रोल (Bed Roll) - टिक वाला बटन
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(
-                    checked = passenger.bedRoll,
-                    onCheckedChange = { passenger.bedRoll = it },
-                    colors = CheckboxDefaults.colors(checkedColor = Color(0xFF8A2BE2))
-                )
-                Text("Bed Roll Required", color = Color.White)
-            }
+        // 🎯 Gender & Berth (Dropdowns)
+        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            IRCTCDropdown(
+                label = "Berth",
+                options = listOf("LOWER", "UPPER", "MIDDLE", "SIDE LOWER", "SIDE UPPER"),
+                selectedOption = passenger.berthPreference,
+                onSelectionChange = { onUpdate(passenger.copy(berthPreference = it)) },
+                modifier = Modifier.weight(0.5f)
+            )
+            IRCTCDropdown(
+                label = "Meal",
+                options = listOf("No Food", "VEG", "NON VEG"),
+                selectedOption = passenger.meal,
+                onSelectionChange = { onUpdate(passenger.copy(meal = it)) },
+                modifier = Modifier.weight(0.5f)
+            )
+        }
+        
+        // ✅ Bed Roll Checkbox
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = passenger.bedRoll, onCheckedChange = { onUpdate(passenger.copy(bedRoll = it)) })
+            Text("Bed Roll Required", color = colors.onField)
         }
     }
 }
+
+// यहाँ IRCTCDropdown और ReadOnlyField का कोड पहले जैसा ही रहेगा
