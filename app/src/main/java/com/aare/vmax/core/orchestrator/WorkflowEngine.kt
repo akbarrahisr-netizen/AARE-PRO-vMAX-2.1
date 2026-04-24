@@ -56,7 +56,8 @@ class WorkflowEngine : AccessibilityService() {
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_START) {
-            activeTask = intent.getParcelableExtra(EXTRA_TASK)
+            // ✅ फिक्स 1: कंप्यूटर को बता दिया कि लिफ़ाफ़े में SniperTask है
+            activeTask = intent.getParcelableExtra(EXTRA_TASK) as? SniperTask
             schedulePreFireCheck()
         }
         return super.onStartCommand(intent, flags, startId)
@@ -142,7 +143,8 @@ class WorkflowEngine : AccessibilityService() {
     // ========================================
     // ✍️ स्टेप 3: डेटा फिलिंग (Index-Aware)
     // ========================================
-    private fun fillPassengerData(passenger: PassengerData, index: Int): Boolean {
+    // ✅ फिक्स 2: यहाँ suspend लगा दिया ताकि delay काम कर सके
+    private suspend fun fillPassengerData(passenger: PassengerData, index: Int): Boolean {
         val root = rootInActiveWindow ?: return false
         return try {
             val names = root.findAccessibilityNodeInfosByViewId(IRCTCIds.PASSENGER_NAME)
@@ -222,3 +224,4 @@ class WorkflowEngine : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() {}
 }
+
