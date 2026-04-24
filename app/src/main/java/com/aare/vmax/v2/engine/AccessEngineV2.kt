@@ -22,7 +22,6 @@ class AccessEngineV2(
     private var lastScanDepth = 3
     private var frameDropCount = 0
 
-    // ✅ उस्ताद, यहाँ 'companion object' का सुरक्षा घेरा बना दिया है
     companion object {
         private const val MIN_DEPTH = 2
         private const val MAX_DEPTH = 6
@@ -99,13 +98,17 @@ class AccessEngineV2(
 
     private suspend fun monitorFramePressure() {
         var lastTime = System.nanoTime()
-        // ✅ यहाँ coroutineContext.isActive का सही इस्तेमाल किया गया है
-        while (coroutineContext.isActive) {
-            delay(100)
-            val now = System.nanoTime()
-            val frameMs = (now - lastTime) / 1_000_000
-            frameDropCount = if (frameMs > 33) minOf(frameDropCount + 1, 10) else maxOf(0, frameDropCount - 1)
-            lastTime = now
+        // ✅ Fix: Simplified loop that works everywhere without extra imports
+        while (true) {
+            try {
+                delay(100)
+                val now = System.nanoTime()
+                val frameMs = (now - lastTime) / 1_000_000
+                frameDropCount = if (frameMs > 33) minOf(frameDropCount + 1, 10) else maxOf(0, frameDropCount - 1)
+                lastTime = now
+            } catch (e: Exception) {
+                break
+            }
         }
     }
 
