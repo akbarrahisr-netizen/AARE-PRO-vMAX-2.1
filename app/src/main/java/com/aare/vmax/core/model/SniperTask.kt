@@ -2,25 +2,20 @@ package com.aare.vmax.core.model
 
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
+import java.util.UUID
 
-// 🏹 डेटा कोIntent में भेजने के लिए Parcelize ज़रूरी है
-@Parcelize
-data class SniperTask(
-    val taskId: String,
-    val trainNumber: String,
-    val travelClass: String,
-    val quota: String,
-    val passengers: List<PassengerData>
-) : Parcelable
-
-// 📝 पैसेंजर का सांचा (अगर PassengerData.kt अलग से नहीं है, तो इसे यहाँ रहने दें)
 @Parcelize
 data class PassengerData(
-    var name: String = "",
-    var age: String = "",
-    var gender: String = "Male",
-    var berthPreference: String = "No Preference"
+    val id: String = UUID.randomUUID().toString(),
+    var name: String = "",                   // 1. नाम
+    var age: String = "",                    // 2. उम्र
+    var gender: String = "Male",             // 3. जेंडर
+    var berthPref: String = "No Preference", // 4. सीट चॉइस
+    var mealPref: String = "No Food",        // 5. खाना
+    var bedRoll: Boolean = false             // 6. बेड रोल (Yes/No)
 ) : Parcelable {
+    
+    // 🎯 इंजन को बताने के लिए कि फॉर्म भरा है या नहीं
     fun isFilled() = name.isNotBlank() && age.isNotBlank()
 }
 
