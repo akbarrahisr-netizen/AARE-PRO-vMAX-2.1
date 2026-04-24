@@ -1,191 +1,224 @@
-package com.aare.vmax.core.orchestrator
+package com.aare.vmax.core.engine
 
 import android.accessibilityservice.AccessibilityService
-import android.accessibilityservice.GestureDescription
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.Intent
 import android.os.Bundle
-import android.os.Handler
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import com.aare.vmax.core.models.*
+import com.aare.vmax.core.model.PassengerData
+import com.aare.vmax.core.model.SniperTask
+import com.aare.vmax.core.utils.SafeRecycle
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.*
 
-class WorkflowEngine(
-    private val rootProvider: () -> AccessibilityNodeInfo?,
-    private val gestureDispatcher: GestureDispatcher,
-    private val config: EngineConfig = EngineConfig(),
-    private val scope: CoroutineScope
-) {
-    private var currentRecording: List<RecordedStep> = emptyList()
-    private var currentStepIndex = 0
-    private val stepRetryCount = mutableMapOf<Int, Int>()
-    private var listeningJob: Job? = null
-    private var currentStepJob: Job? = null
-    private var callback: EngineCallback? = null
+class WorkflowEngine : AccessibilityService() {
     
     companion object {
-        private const val TAG = "VMAX_Engine"
-        private const val DEFAULT_MAX_RETRIES = 3
+        private const val TAG = "VMAX_Workflow"
+        private const val ACTION_START = "com.aare.vmax.ACTION_START"
+        private const val EXTRA_TASK = "extra_task"
+        
+        // ⚡ उस्ताद का हाइपर-स्पीड कॉन्फ़िग
+        private const val RADAR_SCAN_MS = 50L              // 50ms एंटी-ब्लॉक रडार
+        private const val EARLY_FIRE_MS = 200L             // 200ms पहले फायर
+        private const val FIELD_FILL_DELAY_MS = 10L        // 12GB RAM के लिए अल्ट्रा-फास्ट
+        private const val VISIBILITY_TIMEOUT_MS = 2000L    
     }
     
-    fun loadRecording(steps: List<RecordedStep>) {
-        currentRecording = steps
-        currentStepIndex = 0
-        stepRetryCount.clear()
-        Log.d(TAG, "✅ Loaded ${steps.size} steps")
-        callback?.onWorkflowStarted()
+    private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val actionMutex = Mutex()
+    private var activeTask: SniperTask? = null
+    private var isExecuting = false
+    
+    // 🎯 IRCTC Resource IDs (Bulletproof IDs)
+    private object IRCTCIds {
+        const val PASSENGER_NAME = "cris.org.in.prs.ima:id/et_passenger_name"
+        const val PASSENGER_AGE = "cris.org.in.prs.ima:id/et_passenger_age"
+        const val ADD_PASSENGER_BTN = "cris.org.in.prs.ima:id/btn_add_passenger"
+        const val REVIEW_JOURNEY_BTN = "cris.org.in.prs.ima:id/btn_review"
+        const val PAYMENT_UPI = "cris.org.in.prs.ima:id/payment_upi"
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        serviceInfo = AccessibilityServiceInfo().apply {
+            eventTypes = AccessibilityEvent.TYPES_ALL_MASK
+            feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+            notificationTimeout = 20
+            flags = AccessibilityServiceInfo.FLAG_REQUEST_TOUCH_EXPLORATION_MODE or AccessibilityServiceInfo.DEFAULT
+        }
+        Log.d(TAG, "✅ स्नाइपर इंजन मुकम्मल! फायरिंग के लिए तैयार।")
     }
     
-    fun setCallback(callback: EngineCallback) {
-        this.callback = callback
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_START) {
+            activeTask = intent.getParcelableExtra(EXTRA_TASK)
+            schedulePreFireCheck()
+        }
+        return super.onStartCommand(intent, flags, startId)
     }
-    
-    fun onScreenChanged() {
-        if (currentStepIndex >= currentRecording.size) {
-            if (currentRecording.isNotEmpty()) {
-                Log.d(TAG, "🏁 Workflow completed!")
-                callback?.onWorkflowCompleted()
+
+    // ========================================
+    // ⚡ स्टेप 1: टाइमिंग लॉजिक (8, 10, 11 AM - 200ms)
+    // ========================================
+    private fun schedulePreFireCheck() {
+        val task = activeTask ?: return
+        engineScope.launch {
+            val targetHour = when (task.quota) {
+                "General" -> 8
+                else -> if (task.travelClass in listOf("1A", "2A", "3A", "3E", "CC")) 10 else 11
             }
-            return
-        }
-        
-        currentStepJob?.cancel()
-        currentStepJob = scope.launch {
-            withTimeoutOrNull(config.stepTimeoutMs) {
-                processCurrentStep()
-            } ?: handleTimeout()
-        }
-    }
-    
-    private suspend fun processCurrentStep() {
-        val step = currentRecording[currentStepIndex]
-        callback?.onStepStarted(step, currentStepIndex)
-        
-        val root = rootProvider()
-        if (root == null) {
-            delay(100)
-            return
-        }
-        
-        // 🎯 Anchor (ट्रेन नंबर) और Criteria के साथ बटन ढूँढना
-        val node = findNode(root, step.criteria, step.anchorText)
-        
-        if (node != null) {
-            executeAction(node, step)
-            stepRetryCount.remove(currentStepIndex)
-            callback?.onStepCompleted(step, currentStepIndex - 1)
-        } else {
-            handleNodeNotFound(step)
+            
+            val calendar = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, targetHour)
+                set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            }
+            
+            val exactFireTimeMs = calendar.timeInMillis - EARLY_FIRE_MS
+
+            // अगर बटन दबाते ही टाइम हो चुका है (No Tomorrow Bug)
+            if (System.currentTimeMillis() >= exactFireTimeMs) {
+                Log.d(TAG, "🎯 फर्स्ट क्लिक! तुरंत हमला शुरू...")
+                executeWorkflow()
+                return@launch
+            }
+            
+            Log.d(TAG, "⏰ टाइमर लॉक: ठीक 200ms पहले फायर होगा।")
+            while (System.currentTimeMillis() < exactFireTimeMs && isActive) { delay(10) }
+            
+            if (isActive) executeWorkflow()
         }
     }
-    
-    private fun findNode(root: AccessibilityNodeInfo, text: String, anchor: String = ""): AccessibilityNodeInfo? {
-        // अगर एंकर (ट्रेन नंबर) है, तो पहले उसे ढूँढो फिर उसके करीब वाले बटन को
-        val nodes = root.findAccessibilityNodeInfosByText(text)
-        if (nodes.isNullOrEmpty()) return null
+
+    // ========================================
+    // 🚀 स्टेप 2: एंकर लॉजिक (ट्रेन + क्लास क्लिक)
+    // ========================================
+    private suspend fun executeWorkflow() = actionMutex.withLock {
+        if (isExecuting) return@withLock
+        isExecuting = true
+        val task = activeTask ?: return@withLock
         
-        // IRCTC के लिए: सिर्फ वो बटन चुनें जो स्क्रीन पर दिख रहा हो
-        var selected = nodes.firstOrNull { it.isVisibleToUser && (it.isClickable || it.isEnabled) }
-        if (selected == null) selected = nodes.firstOrNull { it.isVisibleToUser }
-        
-        nodes.forEach { if (it != selected) it.recycle() }
-        return selected
-    }
-    
-    private suspend fun handleNodeNotFound(step: RecordedStep) {
-        val retries = stepRetryCount.getOrDefault(currentStepIndex, 0)
-        val maxRetries = config.defaultMaxRetries.coerceAtLeast(DEFAULT_MAX_RETRIES)
-        
-        if (retries < maxRetries) {
-            stepRetryCount[currentStepIndex] = retries + 1
-            Log.w(TAG, "⏳ Retry ${retries + 1}/$maxRetries for: ${step.criteria}")
-            delay(400L * (retries + 1)) 
-        } else {
-            Log.e(TAG, "❌ Failed: ${step.criteria}")
-            callback?.onStepFailed(step, currentStepIndex, "Node not found")
-            stepRetryCount.remove(currentStepIndex)
-            currentStepIndex++ 
-        }
-    }
-    
-    private suspend fun handleTimeout() {
-        if (currentStepIndex < currentRecording.size) {
-            Log.e(TAG, "⏰ Step $currentStepIndex timeout!")
-            callback?.onStepFailed(currentRecording[currentStepIndex], currentStepIndex, "Timeout")
-            currentStepIndex++
-        }
-    }
-    
-    private fun executeAction(node: AccessibilityNodeInfo, step: RecordedStep) {
         try {
-            val success = when (step.actionType) {
-                ActionType.CLICK -> {
-                    node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            // १. फोटो वाला लॉजिक: गाड़ी नंबर और क्लास पर क्लिक
+            Log.d(TAG, "🚂 ट्रेन ${task.trainNumber} पर क्लास ${task.travelClass} ढूँढ रहे हैं...")
+            findAndClickTrainClass(task.trainNumber, task.travelClass)
+
+            // २. 50ms रडार: पैसेंजर पेज का इंतज़ार
+            var pageLoaded = false
+            val timeoutMs = System.currentTimeMillis() + 5000L
+            while (System.currentTimeMillis() < timeoutMs && isActive) {
+                val root = rootInActiveWindow
+                if (root != null) {
+                    val nodes = root.findAccessibilityNodeInfosByViewId(IRCTCIds.PASSENGER_NAME)
+                    if (nodes.isNotEmpty()) { pageLoaded = true; SafeRecycle.recycle(root); break }
+                    SafeRecycle.recycle(root)
                 }
-                ActionType.INPUT_TEXT -> {
-                    val args = Bundle().apply {
-                        putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, step.inputText)
+                delay(RADAR_SCAN_MS)
+            }
+
+            if (!pageLoaded) return@withLock
+
+            // ३. इंडेक्स-अवेयर फिलिंग (जितना भरा उतना काम)
+            val activePassengers = task.passengers.filter { it.isFilled() }
+            for ((index, passenger) in activePassengers.withIndex()) {
+                if (fillPassengerData(passenger, index)) {
+                    if (index < activePassengers.lastIndex) {
+                        clickAddPassenger()
+                        waitForNewForm(index + 1)
                     }
-                    node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-                }
-                else -> {
-                    Log.d(TAG, "⚠️ Action skipped: ${step.actionType}")
-                    true
                 }
             }
             
-            if (success) {
-                currentStepIndex++
-                Log.d(TAG, "✅ Step Done: ${step.id}")
+            // ४. पेमेंट गेटवे जंप
+            triggerPaymentFlow()
+            
+        } finally { isExecuting = false }
+    }
+
+    // ========================================
+    // ✍️ स्टेप 3: डेटा फिलिंग (Index-Aware)
+    // ========================================
+    private fun fillPassengerData(passenger: PassengerData, index: Int): Boolean {
+        val root = rootInActiveWindow ?: return false
+        return try {
+            val names = root.findAccessibilityNodeInfosByViewId(IRCTCIds.PASSENGER_NAME)
+            val ages = root.findAccessibilityNodeInfosByViewId(IRCTCIds.PASSENGER_AGE)
+            
+            if (names.size > index && ages.size > index) {
+                val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, passenger.name) }
+                names[index].performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+                delay(FIELD_FILL_DELAY_MS)
+                
+                args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, passenger.age)
+                ages[index].performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+                true
+            } else false
+        } finally { SafeRecycle.recycle(root) }
+    }
+
+    // ========================================
+    // 🚂 ट्रेन कार्ड एंकर लॉजिक (फोटो आधारित)
+    // ========================================
+    private fun findAndClickTrainClass(trainNo: String, className: String): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val trainNodes = root.findAccessibilityNodeInfosByText(trainNo)
+        if (trainNodes.isEmpty()) return false
+        
+        var card = trainNodes[0].parent
+        repeat(5) { // कार्ड के डब्बे को ढूँढना
+            val classes = card?.findAccessibilityNodeInfosByText(className)
+            if (!classes.isNullOrEmpty()) {
+                classes[0].performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                return true
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "💥 Execution failed", e)
-        } finally {
-            try { node.recycle() } catch (e: Exception) {}
+            card = card?.parent
+        }
+        return false
+    }
+
+    private suspend fun waitForNewForm(requiredCount: Int) {
+        val end = System.currentTimeMillis() + VISIBILITY_TIMEOUT_MS
+        while (System.currentTimeMillis() < end) {
+            val root = rootInActiveWindow
+            val count = root?.findAccessibilityNodeInfosByViewId(IRCTCIds.PASSENGER_NAME)?.size ?: 0
+            SafeRecycle.recycle(root)
+            if (count >= requiredCount + 1) return
+            delay(RADAR_SCAN_MS)
         }
     }
-    
-    fun startReactiveListening(eventFlow: SharedFlow<AccessibilityEvent>) {
-        listeningJob?.cancel()
-        listeningJob = scope.launch {
-            eventFlow.collect { onScreenChanged() }
+
+    private fun clickAddPassenger() {
+        val root = rootInActiveWindow
+        root?.findAccessibilityNodeInfosByViewId(IRCTCIds.ADD_PASSENGER_BTN)?.firstOrNull()?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        SafeRecycle.recycle(root)
+    }
+
+    private suspend fun triggerPaymentFlow() {
+        delay(200)
+        // सीधे पेमेंट बटन और UPI की तरफ जंप
+        findAndClickByText(listOf("Review Journey", "Proceed", "Pay Now"))
+    }
+
+    private fun findAndClickByText(terms: List<String>): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val text = node.text?.toString()?.lowercase() ?: ""
+            if (terms.any { text.contains(it.lowercase()) } && node.isClickable) {
+                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                return true
+            }
+            repeat(node.childCount) { i -> node.getChild(i)?.let { queue.add(it) } }
         }
+        return false
     }
-    
-    fun notifyEvent(event: AccessibilityEvent) {
-        onScreenChanged()
-    }
-    
-    fun reset() {
-        currentStepIndex = 0
-        stepRetryCount.clear()
-        currentStepJob?.cancel()
-    }
-    
-    fun shutdown() {
-        listeningJob?.cancel()
-        currentStepJob?.cancel()
-        reset()
-    }
-    
-    fun isReady(): Boolean = rootProvider() != null
-}
 
-// 🛡️ Error रोकने के लिए Interface
-interface GestureDispatcher {
-    fun dispatchGesture(gesture: GestureDescription, callback: AccessibilityService.GestureResultCallback?, handler: Handler?): Boolean
-}
-
-data class EngineConfig(
-    val stepTimeoutMs: Long = 10000,
-    val defaultMaxRetries: Int = 12
-)
-
-interface EngineCallback {
-    fun onWorkflowStarted()
-    fun onStepStarted(step: RecordedStep, index: Int)
-    fun onStepCompleted(step: RecordedStep, index: Int)
-    fun onStepFailed(step: RecordedStep, index: Int, error: String)
-    fun onWorkflowCompleted()
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    override fun onInterrupt() {}
 }
