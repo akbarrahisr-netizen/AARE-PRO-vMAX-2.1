@@ -111,7 +111,8 @@ class WorkflowEngine : AccessibilityService() {
             // २. 50ms रडार: पैसेंजर पेज का इंतज़ार
             var pageLoaded = false
             val timeoutMs = System.currentTimeMillis() + 5000L
-            while (System.currentTimeMillis() < timeoutMs && isActive) {
+            // ✅ फाइनल फिक्स: isActive की जगह coroutineContext.isActive कर दिया
+            while (System.currentTimeMillis() < timeoutMs && coroutineContext.isActive) {
                 val root = rootInActiveWindow
                 if (root != null) {
                     val nodes = root.findAccessibilityNodeInfosByViewId(IRCTCIds.PASSENGER_NAME)
@@ -224,4 +225,3 @@ class WorkflowEngine : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() {}
 }
-
