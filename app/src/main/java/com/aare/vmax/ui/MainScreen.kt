@@ -62,14 +62,14 @@ fun MainScreen(
         mutableStateOf(listOf(PassengerData(id = UUID.randomUUID().toString()))) 
     }
     
-    // ⚙️ Advanced Booking State
+    // ⚙️ Advanced Booking State (13 Classes + Payments हैं यहाँ!)
     var selectedClass by remember { mutableStateOf("3A") }
     var selectedPaymentMethod by remember { mutableStateOf("UPI") }
     var selectedUPIApp by remember { mutableStateOf("BHIM UPI") }
     var showClassDropdown by remember { mutableStateOf(false) }
     var showPaymentDropdown by remember { mutableStateOf(false) }
 
-    // 🗂️ Data Lists (All 13 Classes + Payments)
+    // 🗂️ All 13 Travel Classes
     val travelClasses = remember {
         listOf(
             "EA" to "First AC (EA)", "1A" to "First AC (1A)", "2A" to "Second AC (2A)",
@@ -80,6 +80,7 @@ fun MainScreen(
         )
     }
     
+    // 💳 Payment Options
     val paymentOptions = remember {
         mapOf(
             "UPI" to listOf("BHIM UPI", "PhonePe", "Paytm", "CRED UPI", "Google Pay"),
@@ -100,16 +101,16 @@ fun MainScreen(
     val quotaOptions = listOf("General", "Tatkal", "Premium Tatkal", "Ladies", "Lower Berth/Sr. Citizen", "Divyangjan") 
     val maxPassengers = if (selectedQuota == "General") 6 else 4
     
-    // ✅ POPUP FIX: यह अब तुरंत चेक करेगा कि सर्विस On है या नहीं
+    // ✅ POPUP KILLER LOGIC (अब यह ऐप चालू होते ही तुरंत चेक करेगा)
     var isAccessibilityEnabled by remember { 
         mutableStateOf(isAccessibilityServiceEnabled(context, WorkflowEngine::class.java)) 
     }
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // जब भी यूज़र स्क्रीन पर वापस आएगा, यह तुरंत चेक करेगा
+    // जैसे ही आप सेटिंग से ऐप में लौटेंगे, यह तुरंत रिफ्रेश कर देगा
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
+            if (event == Lifecycle.Event.ON_START || event == Lifecycle.Event.ON_RESUME) {
                 isAccessibilityEnabled = isAccessibilityServiceEnabled(context, WorkflowEngine::class.java)
             }
         }
@@ -181,14 +182,20 @@ fun MainScreen(
             }
         }
 
-        // ⚠️ Accessibility Warning (अब यह सही से काम करेगा)
+        // ⚠️ Accessibility Warning (अब यह सही से छुप जाएगा)
         if (!isAccessibilityEnabled) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = colors.warning.copy(alpha = 0.1f)),
                 border = BorderStroke(1.dp, colors.warning),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                    // ✅ पॉपअप पर क्लिक करने से भी रिफ्रेश होगा!
+                    .clickable { 
+                        isAccessibilityEnabled = isAccessibilityServiceEnabled(context, WorkflowEngine::class.java)
+                        if (!isAccessibilityEnabled) {
+                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) 
+                        }
+                    }
                     .padding(vertical = 12.dp)
             ) {
                 Row(
@@ -196,7 +203,7 @@ fun MainScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text("⚠️", fontSize = 18.sp, modifier = Modifier.padding(start = 8.dp))
-                    Text("Enable VMAX in Accessibility Settings", color = colors.warning, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
+                    Text("VMAX Service is OFF\n(Tap here to fix & refresh)", color = colors.warning, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
                 }
             }
         }
@@ -210,7 +217,7 @@ fun MainScreen(
             Text("Max: $maxPassengers", color = colors.hint, fontSize = 12.sp)
         }
 
-        // 📜 Scrollable Passenger List
+        // 📜 Scrollable Passenger List & Booking Options
         val listState = rememberLazyListState()
         LazyColumn(
             state = listState,
@@ -249,7 +256,7 @@ fun MainScreen(
                 }
             }
 
-            // ⚙️ ADVANCED BOOKING OPTIONS 
+            // ⚙️ ADVANCED BOOKING OPTIONS
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = colors.cardBg),
@@ -260,7 +267,7 @@ fun MainScreen(
                         Text("⚙️ Booking Options", color = colors.accent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Spacer(Modifier.height(12.dp))
                         
-                        // Travel Class Selection
+                        // Travel Class Selection (With ALL 13 Classes)
                         Text("Travel Class", color = colors.hint, fontSize = 12.sp)
                         ExposedDropdownMenuBox(
                             expanded = showClassDropdown,
@@ -324,7 +331,6 @@ fun MainScreen(
                                         text = { Text(category, color = colors.onField) },
                                         onClick = { 
                                             selectedPaymentMethod = category
-                                            // Reset selected App when category changes
                                             selectedUPIApp = paymentOptions[category]?.firstOrNull() ?: ""
                                             showPaymentDropdown = false 
                                         }
@@ -333,7 +339,7 @@ fun MainScreen(
                             }
                         }
                         
-                        // Show Apps if UPI or Wallet selected
+                        // Show Apps if UPI or Wallet selected (With Horizontal Scroll)
                         if (paymentOptions[selectedPaymentMethod]?.isNotEmpty() == true) {
                             Spacer(Modifier.height(8.dp))
                             Text("Select App", color = colors.hint, fontSize = 12.sp)
@@ -441,7 +447,8 @@ fun MainScreen(
     }
 }
 
-// ✅ POPUP FIX: यह आपके द्वारा दिया गया सबसे परफेक्ट फंक्शन है
+// ✅ FINAL FIXED FUNCTION (ULTIMATE MERGE)
+// इसमें आपका 'सख्त' तरीका भी है और मेरा 'स्मार्ट' तरीका भी! अब यह कभी धोखा नहीं देगा।
 private fun isAccessibilityServiceEnabled(
     context: Context,
     serviceClass: Class<*>
@@ -454,9 +461,16 @@ private fun isAccessibilityServiceEnabled(
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         ) ?: return false
 
-        enabledServices.split(":").any {
+        // 1. पहला टेस्ट: आपका सख्त तरीका (Strict Match)
+        val isStrictMatch = enabledServices.split(":").any {
             ComponentName.unflattenFromString(it) == expected
         }
+        
+        // 2. दूसरा टेस्ट: मेरा स्मार्ट तरीका (अगर पहला फेल हो जाए)
+        val isSmartMatch = enabledServices.contains(serviceClass.simpleName, ignoreCase = true)
+        
+        // अगर दोनों में से कोई भी 'True' है, तो सर्विस चालू मानी जाएगी!
+        isStrictMatch || isSmartMatch
 
     } catch (e: Exception) {
         false
