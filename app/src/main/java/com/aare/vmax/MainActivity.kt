@@ -161,9 +161,16 @@ fun MainScreen() {
             Text("OPEN ACCESSIBILITY SETTINGS", fontWeight = FontWeight.Bold)
         }
         
-        // 🔥 ARM THE SNIPER बटन (अगले स्टेप के लिए तैयार)
+        // 🔥 ARM THE SNIPER बटन (इंजन को डेटा भेजने के लिए तैयार)
         Button(
-            onClick = { /* इंजन को डेटा भेजने का कोड यहाँ आएगा */ },
+            onClick = {
+                val intent = Intent(context, WorkflowEngine::class.java).apply {
+                    action = WorkflowEngine.ACTION_START_SNIPER
+                    putExtra("PASSENGER_LIST", java.util.ArrayList(passengers))
+                }
+                context.startService(intent)
+                android.widget.Toast.makeText(context, "🎯 SNIPER ARMED! अब IRCTC ऐप खोलें...", android.widget.Toast.LENGTH_LONG).show()
+            },
             modifier = Modifier.fillMaxWidth().height(50.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
         ) {
@@ -172,6 +179,7 @@ fun MainScreen() {
     }
 }
 
+// ✅ Serializable जोड़ दिया गया है ताकि डेटा सर्विस तक जा सके
 data class PassengerData(
     val name: String,
     val age: String,
@@ -179,7 +187,7 @@ data class PassengerData(
     val meal: String,
     val berthPreference: String = "No Preference",
     val bedRoll: Boolean = false
-)
+) : java.io.Serializable
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -206,7 +214,6 @@ fun PassengerCard(
                 singleLine = true
             )
             
-            // ✅ उस्ताद! आपका वाला Age का कोड यहाँ बिल्कुल फिट कर दिया है
             OutlinedTextField(
                 value = data.age,
                 onValueChange = { if (it.all { char -> char.isDigit() }) onDataChanged(data.copy(age = it)) },
