@@ -1,28 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+    package="com.aare.vmax">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" /> <!-- ✅ OTP reading ke liye -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <queries>
         <package android:name="cris.org.in.prs.ima" />
     </queries>
 
     <application
-        android:allowBackup="true"
         android:label="VMAX Pro"
-        android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
-        tools:targetApi="34">
+        android:theme="@style/Theme.Material3.Dark"
+        android:usesCleartextTraffic="true">
 
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:launchMode="singleTop">
+        <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -30,9 +26,9 @@
         </activity>
 
         <service
-            android:name=".core.orchestrator.WorkflowEngine"
+            android:name=".core.engine.WorkflowEngine"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:exported="true"
+            android:exported="true"          <!-- ✅ ये true होना चाहिए, false नहीं -->
             android:foregroundServiceType="specialUse">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
@@ -40,10 +36,6 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
-            <property
-                android:name="android.accessibilityservice.PROPERTY_RECEIVER_EXPORTED"
-                android:value="true" />
         </service>
-
     </application>
 </manifest>
