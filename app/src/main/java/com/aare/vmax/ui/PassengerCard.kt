@@ -17,7 +17,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aare.vmax.core.model.PassengerData
@@ -30,16 +29,16 @@ fun PassengerCard(
     passengerIndex: Int,
     onUpdate: (PassengerData) -> Unit,
     onRemove: () -> Unit,
-    modifier: Modifier = Modifier,
-    onFieldSubmit: (() -> Unit)? = null
+    modifier: Modifier = Modifier
 ) {
     val colors = VMaxColors.current
     val keyboardController = LocalSoftwareKeyboardController.current
     
-    // ✅ स्थिर ऑप्शंस (Recomposition से सुरक्षित)
+    // ✅ सारे ऑप्शंस जो दोनों कोड्स में थे (Merged)
     val genderOptions = remember { listOf("Male", "Female", "Transgender") }
     val berthOptions = remember { listOf("No Preference", "LOWER", "MIDDLE", "UPPER", "SIDE LOWER", "SIDE UPPER") }
-    val mealOptions = remember { listOf("No Food", "VEG", "NON VEG", "JAIN MEAL") }
+    val mealOptions = remember { listOf("No Food", "VEG", "NON VEG", "JAIN MEAL", "VEG (DIABETIC)", "NON VEG (DIABETIC)") }
+    val countryOptions = remember { listOf("India") }
     
     var nameError by remember { mutableStateOf<String?>(null) }
     var ageError by remember { mutableStateOf<String?>(null) }
@@ -50,10 +49,10 @@ fun PassengerCard(
             .padding(vertical = 4.dp)
             .border(1.dp, colors.accent.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
             .background(colors.cardBg, RoundedCornerShape(12.dp))
-            .padding(16.dp),
+            .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // 📋 हेडर: पैसेंजर नंबर और रिमूव बटन
+        // 📋 हेडर: पैसेंजर नंबर और डिलीट बटन
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(text = "👤 Passenger ${passengerIndex + 1}", color = colors.accent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             if (passengerIndex > 0) {
@@ -63,18 +62,21 @@ fun PassengerCard(
             }
         }
         
-        // ✍️ लाइन 1: Name और Age
+        // ✍️ लाइन 1: Name और Age (विथ वैलिडेशन)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
                 value = passenger.name,
                 onValueChange = { 
-                    nameError = if (it.length < 4) "Short" else null
+                    nameError = if (it.length < 4 && it.isNotEmpty()) "Short" else null
                     onUpdate(passenger.copy(name = it)) 
                 },
                 label = { Text("Name", fontSize = 12.sp) },
                 isError = nameError != null,
                 modifier = Modifier.weight(0.65f),
-                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = colors.onField, unfocusedTextColor = colors.onField, focusedContainerColor = colors.fieldBg, unfocusedContainerColor = colors.fieldBg),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = colors.onField, unfocusedTextColor = colors.onField, 
+                    focusedContainerColor = colors.fieldBg, unfocusedContainerColor = colors.fieldBg
+                ),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next)
             )
@@ -83,12 +85,16 @@ fun PassengerCard(
                 onValueChange = { if (it.length <= 3) onUpdate(passenger.copy(age = it)) },
                 label = { Text("Age", fontSize = 12.sp) },
                 modifier = Modifier.weight(0.35f),
-                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = colors.onField, unfocusedTextColor = colors.onField, focusedContainerColor = colors.fieldBg, unfocusedContainerColor = colors.fieldBg),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next)
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = colors.onField, unfocusedTextColor = colors.onField, 
+                    focusedContainerColor = colors.fieldBg, unfocusedContainerColor = colors.fieldBg
+                ),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { keyboardController?.hide() })
             )
         }
 
-        // 🎯 लाइन 2: Gender और Berth Preference
+        // 🎯 लाइन 2: Gender और Country (Merged)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             IRCTCDropdown(
                 label = "Gender",
@@ -98,37 +104,61 @@ fun PassengerCard(
                 modifier = Modifier.weight(0.5f)
             )
             IRCTCDropdown(
-                label = "Berth",
+                label = "Country",
+                options = countryOptions,
+                selectedOption = passenger.country,
+                onSelectionChange = { onUpdate(passenger.copy(country = it)) },
+                modifier = Modifier.weight(0.5f)
+            )
+        }
+
+        // 🍽️ लाइन 3: Berth Preference और Meal (Merged)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            IRCTCDropdown(
+                label = "Berth Pref",
                 options = berthOptions,
                 selectedOption = passenger.berthPreference,
                 onSelectionChange = { onUpdate(passenger.copy(berthPreference = it)) },
                 modifier = Modifier.weight(0.5f)
             )
-        }
-
-        // 🍽️ लाइन 3: Meal और Bed Roll
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             IRCTCDropdown(
                 label = "Meal",
                 options = mealOptions,
-                selectedOption = passenger.meal,
+                selectedOption = passenger.meal, // मॉडल में इसे meal ही रखा है
                 onSelectionChange = { onUpdate(passenger.copy(meal = it)) },
-                modifier = Modifier.weight(0.6f)
+                modifier = Modifier.weight(0.5f)
             )
-            
-            // ✅ Bed Roll Checkbox
-            Row(modifier = Modifier.weight(0.4f).clickable { onUpdate(passenger.copy(bedRoll = !passenger.bedRoll)) }, verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(
-                    checked = passenger.bedRoll,
-                    onCheckedChange = { onUpdate(passenger.copy(bedRoll = it)) },
-                    colors = CheckboxDefaults.colors(checkedColor = colors.accent)
-                )
-                Text("Bed Roll", color = colors.onField, fontSize = 12.sp)
-            }
+        }
+
+        // ☑️ लाइन 4: 100% Merged Checkboxes (Opt Berth, Bed Roll, Concession)
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp), 
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CheckBoxWithLabel(
+                label = "Opt Berth", 
+                checked = passenger.optBerth, 
+                onCheckedChange = { onUpdate(passenger.copy(optBerth = it)) },
+                modifier = Modifier.weight(1f)
+            )
+            CheckBoxWithLabel(
+                label = "Bed Roll", 
+                checked = passenger.bedRoll, 
+                onCheckedChange = { onUpdate(passenger.copy(bedRoll = it)) },
+                modifier = Modifier.weight(1f)
+            )
+            CheckBoxWithLabel(
+                label = "Concess.", 
+                checked = passenger.availConcession, 
+                onCheckedChange = { onUpdate(passenger.copy(availConcession = it)) },
+                modifier = Modifier.weight(1f)
+            )
         }
     }
 }
 
+// 🪄 स्मार्ट ड्रॉपडाउन
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun IRCTCDropdown(
@@ -146,14 +176,15 @@ fun IRCTCDropdown(
             value = selectedOption,
             onValueChange = {},
             readOnly = true,
-            label = { Text(label, fontSize = 11.sp) },
+            label = { Text(label, fontSize = 11.sp, color = colors.hint) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = colors.fieldBg,
                 unfocusedContainerColor = colors.fieldBg,
                 focusedTextColor = colors.onField,
                 unfocusedTextColor = colors.onField,
-                focusedBorderColor = colors.accent
+                focusedBorderColor = colors.accent,
+                unfocusedBorderColor = Color.Transparent
             ),
             modifier = Modifier.menuAnchor().fillMaxWidth()
         )
@@ -165,7 +196,7 @@ fun IRCTCDropdown(
         ) {
             options.forEach { option ->
                 DropdownMenuItem(
-                    text = { Text(option, color = colors.onField, fontSize = 14.sp) },
+                    text = { Text(option, color = colors.onField, fontSize = 13.sp) },
                     onClick = { 
                         onSelectionChange(option)
                         expanded = false 
@@ -173,5 +204,29 @@ fun IRCTCDropdown(
                 )
             }
         }
+    }
+}
+
+// ✅ स्मार्ट चेकबॉक्स (ताकि सब एक लाइन में फिट हो जाएं)
+@Composable
+fun CheckBoxWithLabel(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = VMaxColors.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Start,
+        modifier = modifier.clickable { onCheckedChange(!checked) }.padding(vertical = 4.dp)
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = CheckboxDefaults.colors(checkedColor = colors.accent, uncheckedColor = colors.hint),
+            modifier = Modifier.size(20.dp).padding(end = 4.dp) // साइज़ फिक्स किया
+        )
+        Text(label, color = colors.onField, fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp))
     }
 }
