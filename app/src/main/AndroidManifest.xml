@@ -2,40 +2,62 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.aare.vmax">
 
+    <!-- ========== PERMISSIONS ========== -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
-    <uses-permission android:name="android.permission.READ_SMS" /> <!-- ✅ OTP reading ke liye -->
+    <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    
+    <!-- ✅ OPTIONAL – IRCTC popup detection के लिए -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!-- ========== QUERIES ========== -->
     <queries>
         <package android:name="cris.org.in.prs.ima" />
     </queries>
 
+    <!-- ========== APPLICATION ========== -->
     <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
         android:label="VMAX Pro"
+        android:supportsRtl="true"
         android:theme="@style/Theme.Material3.Dark"
         android:usesCleartextTraffic="true">
 
-        <activity android:name=".MainActivity" android:exported="true">
+        <!-- ✅ Main Activity -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
+        <!-- ✅ Accessibility Service -->
         <service
             android:name=".core.engine.WorkflowEngine"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:exported="true"          <!-- ✅ ये true होना चाहिए, false नहीं -->
-            android:foregroundServiceType="specialUse">
+            android:exported="true"
+            android:foregroundServiceType="specialUse"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
+            
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
+                
+            <!-- ✅ Android 14+ के लिए required -->
+            <property
+                android:name="android.foreground_service_type_special_use"
+                android:value="automation for IRCTC booking" />
         </service>
+
     </application>
 </manifest>
