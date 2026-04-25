@@ -8,7 +8,7 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.aare.vmax.core.model.PassengerData
-import com.aare.vmax.core.model.BookingOptions // ✅ नया मॉडल इम्पोर्ट किया
+import com.aare.vmax.core.model.BookingOptions
 import com.aare.vmax.core.model.SniperTask
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
@@ -47,7 +47,7 @@ class WorkflowEngine : AccessibilityService() {
     private val textActionBundle = Bundle()
     private val lowercaseCache = mutableMapOf<String, String>()
 
-    // 🎯 100% Merged IRCTC IDs
+    // 🎯 100% Merged IRCTC IDs (Advanced Booking + Direct Payment)
     private object IRCTCIds {
         const val PASSENGER_NAME = "cris.org.in.prs.ima:id/et_passenger_name"
         const val PASSENGER_AGE = "cris.org.in.prs.ima:id/et_passenger_age"
@@ -66,11 +66,20 @@ class WorkflowEngine : AccessibilityService() {
         const val COACH_ID = "cris.org.in.prs.ima:id/et_coach_id"
         const val MOBILE_NO = "cris.org.in.prs.ima:id/et_mobile"
         
-        // Payment
+        // 💳 Advanced Payment Methods
         const val PAYMENT_UPI = "cris.org.in.prs.ima:id/payment_upi"
+        const val PAYMENT_NETBANKING = "cris.org.in.prs.ima:id/payment_netbanking"
+        const val PAYMENT_CARD = "cris.org.in.prs.ima:id/payment_card"
         const val PAYMENT_WALLET = "cris.org.in.prs.ima:id/payment_wallet"
-        const val BOOK_NOW_BTN = "cris.org.in.prs.ima:id/btn_book_now"
+        const val UPI_BHIM = "cris.org.in.prs.ima:id/bhim_upi"
+        const val UPI_PHONEPE = "cris.org.in.prs.ima:id/phonepe"
+        const val UPI_PAYTM = "cris.org.in.prs.ima:id/paytm_upi"
+        const val UPI_CRED = "cris.org.in.prs.ima:id/cred_upi"
+        const val WALLET_IRCTC = "cris.org.in.prs.ima:id/irctc_wallet"
+        const val WALLET_MOBIKWIK = "cris.org.in.prs.ima:id/mobikwik"
         const val AUTO_FILL_OTP = "cris.org.in.prs.ima:id/cb_autofill_otp"
+        const val MANUAL_PAYMENT = "cris.org.in.prs.ima:id/cb_manual_payment"
+        const val BOOK_NOW_BTN = "cris.org.in.prs.ima:id/btn_book_now"
     }
 
     override fun onServiceConnected() {
@@ -177,7 +186,7 @@ class WorkflowEngine : AccessibilityService() {
 
             val activePassengers = task.passengers.filter { it.isFilled() }
             
-            // ✅ डिफ़ॉल्ट बुकिंग ऑप्शंस ले रहे हैं (अगर SniperTask में अभी नहीं जुड़ा है)
+            // ✅ डिफ़ॉल्ट बुकिंग ऑप्शंस
             val bookingOptions = BookingOptions() 
 
             // 1. Fill passenger details (Merged Logic)
@@ -192,7 +201,7 @@ class WorkflowEngine : AccessibilityService() {
             // 2. Apply advanced options
             applyBookingOptions(bookingOptions)
             
-            // 3. Navigate to payment
+            // 3. Navigate to payment (Smart Direct IDs)
             triggerPaymentFlow(bookingOptions)
 
         } catch (e: Exception) {
@@ -214,25 +223,20 @@ class WorkflowEngine : AccessibilityService() {
     ) {
         val root = rootInActiveWindow ?: return
         try {
-            // Fill basic details
             fillFieldById(root, IRCTCIds.PASSENGER_NAME, passenger.name, index)
             delay(FIELD_FILL_DELAY_MS)
             fillFieldById(root, IRCTCIds.PASSENGER_AGE, passenger.age, index)
             
-            // Select gender
             selectDropdown("Gender", passenger.gender)
             
-            // Select berth preference
             if (passenger.berthPreference != "No Preference") {
                 selectDropdown("Berth Preference", passenger.berthPreference)
             }
             
-            // Select meal (मॉडल में 'meal' है, 'mealPreference' नहीं)
             if (passenger.meal != "No Food") {
                 selectDropdown("Meal", passenger.meal)
             }
             
-            // Handle checkboxes (Find text and click)
             if (passenger.optBerth) findAndClickByText(listOf("Opt Berth"))
             if (passenger.bedRoll) findAndClickByText(listOf("Bed Roll"))
             if (passenger.availConcession) findAndClickByText(listOf("Concession"))
@@ -272,38 +276,66 @@ class WorkflowEngine : AccessibilityService() {
     }
 
     // ========================================
-    // 💳 SMART PAYMENT FLOW
+    // 💳 SMART PAYMENT FLOW (Merged specific IDs)
     // ========================================
     private suspend fun triggerPaymentFlow(options: BookingOptions) {
         delay(200)
+        val root = rootInActiveWindow ?: return
         
-        when (options.paymentMethod) {
-            "UPI" -> {
-                if (options.upiId.isNotBlank()) {
-                    findAndClickByText(listOf("UPI ID", "Pay with UPI ID"))
-                } else {
-                    findAndClickByText(listOf("UPI apps", "BHIM/UPI"))
+        try {
+            // 1. Select payment category
+            when (options.paymentMethod) {
+                "UPI" -> clickById(root, IRCTCIds.PAYMENT_UPI)
+                "Netbanking", "Net Banking" -> clickById(root, IRCTCIds.PAYMENT_NETBANKING)
+                "Card", "Credit/Debit Cards" -> clickById(root, IRCTCIds.PAYMENT_CARD)
+                "e-Wallet", "e-Wallets" -> clickById(root, IRCTCIds.PAYMENT_WALLET)
+            }
+            
+            delay(300)
+            
+            // 2. Select specific UPI app
+            if (options.paymentMethod == "UPI") {
+                when (options.upiId) { // upiId को App का नाम मानकर चल रहे हैं
+                    "BHIM UPI" -> clickById(root, IRCTCIds.UPI_BHIM)
+                    "PhonePe" -> clickById(root, IRCTCIds.UPI_PHONEPE)
+                    "Paytm" -> clickById(root, IRCTCIds.UPI_PAYTM)
+                    "CRED UPI" -> clickById(root, IRCTCIds.UPI_CRED)
+                    else -> findAndClickByText(listOf("BHIM/UPI", "UPI apps")) // Fallback
                 }
             }
-            "e-Wallet" -> findAndClickByText(listOf("e-Wallets", "Wallets"))
-            "Netbanking" -> findAndClickByText(listOf("Netbanking", "Net Banking"))
-            "Card" -> findAndClickByText(listOf("Credit/Debit Cards", "Credit & Debit Cards"))
-        }
-        
-        if (options.autofillOTP) {
-            val root = rootInActiveWindow
-            if (root != null) {
-                clickById(root, IRCTCIds.AUTO_FILL_OTP)
-                SafeRecycle.recycle(root)
+            
+            // 3. Select e-Wallet
+            if (options.paymentMethod == "e-Wallet" || options.paymentMethod == "e-Wallets") {
+                when {
+                    options.upiId.contains("IRCTC", ignoreCase = true) -> clickById(root, IRCTCIds.WALLET_IRCTC)
+                    options.upiId.contains("MobiKwik", ignoreCase = true) -> clickById(root, IRCTCIds.WALLET_MOBIKWIK)
+                }
             }
+            
+            // 4. Auto-fill OTP & Manual Payment Toggles
+            if (options.autofillOTP) {
+                clickById(root, IRCTCIds.AUTO_FILL_OTP)
+            }
+            if (options.manualPayment) {
+                clickById(root, IRCTCIds.MANUAL_PAYMENT)
+            }
+            
+            // 5. Final submission
+            delay(500)
+            val clickedDirectly = clickById(root, IRCTCIds.BOOK_NOW_BTN)
+            
+            // अगर डायरेक्ट ID से बुक बटन नहीं मिला, तो टेक्स्ट से ढूँढेगा (Safety Fallback)
+            if (!clickedDirectly) {
+                findAndClickByText(listOf("Review Journey", "Proceed", "Pay Now", "Book Now"))
+            }
+            
+        } finally {
+            SafeRecycle.recycle(root)
         }
-        
-        // Final submission (Review Journey / Pay)
-        findAndClickByText(listOf("Review Journey", "Proceed", "Pay Now", "Book Now"))
     }
 
     // ========================================
-    // 🛠️ HELPER FUNCTIONS (Missing in your code, added here to prevent errors)
+    // 🛠️ HELPER FUNCTIONS (Optimized & Safe)
     // ========================================
     private fun fillFieldById(root: AccessibilityNodeInfo, id: String, text: String, index: Int): Boolean {
         val nodes = root.findAccessibilityNodeInfosByViewId(id)
@@ -331,7 +363,7 @@ class WorkflowEngine : AccessibilityService() {
 
     private suspend fun selectDropdown(label: String, value: String) {
         if (findAndClickByText(listOf(label))) {
-            delay(300) // वेट फॉर ड्रॉपडाउन टू ओपन
+            delay(300) 
             findAndClickByText(listOf(value))
         }
     }
