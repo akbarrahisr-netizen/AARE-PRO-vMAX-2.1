@@ -11,7 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -53,6 +53,8 @@ fun MainScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     val colors = VMaxColors.current
     
+    val trainRegex = remember { Regex("\\d{5}") }
+
     // 🧠 Basic State
     var trainNo by remember { mutableStateOf("12506") }
     var selectedQuota by remember { mutableStateOf("Tatkal") }
@@ -60,33 +62,24 @@ fun MainScreen(
         mutableStateOf(listOf(PassengerData(id = UUID.randomUUID().toString()))) 
     }
     
-    // ⚙️ Advanced Booking State (Merged)
+    // ⚙️ Advanced Booking State
     var selectedClass by remember { mutableStateOf("3A") }
     var selectedPaymentMethod by remember { mutableStateOf("UPI") }
     var selectedUPIApp by remember { mutableStateOf("BHIM UPI") }
     var showClassDropdown by remember { mutableStateOf(false) }
     var showPaymentDropdown by remember { mutableStateOf(false) }
 
-    // 🗂️ ✅ 100% MERGED: All 13 Travel Classes added!
+    // 🗂️ Data Lists (All 13 Classes + Payments)
     val travelClasses = remember {
         listOf(
-            "EA" to "First AC (EA)",
-            "1A" to "First AC (1A)",
-            "2A" to "Second AC (2A)",
-            "3A" to "Third AC (3A)",
-            "CC" to "AC Chair Car (CC)",
-            "3E" to "Third AC Economy (3E)",
-            "EC" to "Executive Chair Car (EC)",
-            "SL" to "Sleeper (SL)",
-            "FC" to "First Class (FC)",
-            "2S" to "Second Sitting (2S)",
-            "VS" to "Vistadome Sleeper (VS)",
-            "VC" to "Vistadome Chair Car (VC)",
-            "EV" to "Vistadome AC (EV)"
+            "EA" to "First AC (EA)", "1A" to "First AC (1A)", "2A" to "Second AC (2A)",
+            "3A" to "Third AC (3A)", "CC" to "AC Chair Car (CC)", "3E" to "Third AC Economy (3E)",
+            "EC" to "Executive Chair Car (EC)", "SL" to "Sleeper (SL)", "FC" to "First Class (FC)",
+            "2S" to "Second Sitting (2S)", "VS" to "Vistadome Sleeper (VS)", 
+            "VC" to "Vistadome Chair Car (VC)", "EV" to "Vistadome AC (EV)"
         )
     }
     
-    // ✅ Payment Options
     val paymentOptions = remember {
         mapOf(
             "UPI" to listOf("BHIM UPI", "PhonePe", "Paytm", "CRED UPI", "Google Pay"),
@@ -104,15 +97,16 @@ fun MainScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showQuotaMenu by remember { mutableStateOf(false) }
     
-    val quotaOptions = remember { 
-        listOf("General", "Tatkal", "Premium Tatkal", "Ladies", "Lower Berth/Sr. Citizen", "Divyangjan") 
-    }
+    val quotaOptions = listOf("General", "Tatkal", "Premium Tatkal", "Ladies", "Lower Berth/Sr. Citizen", "Divyangjan") 
     val maxPassengers = if (selectedQuota == "General") 6 else 4
     
-    // ✅ Smart Accessibility Check (Auto-Hides Warning)
-    var isAccessibilityEnabled by remember { mutableStateOf(false) }
+    // ✅ POPUP FIX: यह अब तुरंत चेक करेगा कि सर्विस On है या नहीं
+    var isAccessibilityEnabled by remember { 
+        mutableStateOf(isAccessibilityServiceEnabled(context, WorkflowEngine::class.java)) 
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
 
+    // जब भी यूज़र स्क्रीन पर वापस आएगा, यह तुरंत चेक करेगा
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -143,7 +137,7 @@ fun MainScreen(
                 },
                 label = { Text("Train No", color = colors.hint) },
                 placeholder = { Text("5 digits", color = colors.hint.copy(alpha = 0.6f)) },
-                isError = trainNo.isNotBlank() && !trainNo.matches(Regex("\\d{5}")),
+                isError = trainNo.isNotBlank() && !trainRegex.matches(trainNo),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = colors.fieldBg, unfocusedContainerColor = colors.fieldBg,
@@ -187,7 +181,7 @@ fun MainScreen(
             }
         }
 
-        // ⚠️ Accessibility Warning
+        // ⚠️ Accessibility Warning (अब यह सही से काम करेगा)
         if (!isAccessibilityEnabled) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = colors.warning.copy(alpha = 0.1f)),
@@ -216,7 +210,7 @@ fun MainScreen(
             Text("Max: $maxPassengers", color = colors.hint, fontSize = 12.sp)
         }
 
-        // 📜 Scrollable Passenger List & Booking Options
+        // 📜 Scrollable Passenger List
         val listState = rememberLazyListState()
         LazyColumn(
             state = listState,
@@ -224,16 +218,13 @@ fun MainScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(bottom = 16.dp)        
         ) {
-            items(passengerList, key = { it.id }) { passenger ->
+            itemsIndexed(passengerList, key = { _, it -> it.id }) { index, passenger ->
                 PassengerCard(
                     passenger = passenger,
-                    passengerIndex = passengerList.indexOf(passenger),
+                    passengerIndex = index,
                     onUpdate = { updated ->
-                        val index = passengerList.indexOfFirst { it.id == passenger.id }
-                        if (index != -1) {
-                            val newList = passengerList.toMutableList()
-                            newList[index] = updated
-                            passengerList = newList
+                        passengerList = passengerList.toMutableList().apply {
+                            this[index] = updated
                         }
                     },
                     onRemove = { 
@@ -249,7 +240,7 @@ fun MainScreen(
                     TextButton(
                         onClick = {
                             passengerList = passengerList + PassengerData(id = UUID.randomUUID().toString())
-                            scope.launch { listState.animateScrollToItem(passengerList.size) }
+                            scope.launch { listState.animateScrollToItem(passengerList.lastIndex) }
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -258,7 +249,7 @@ fun MainScreen(
                 }
             }
 
-            // ⚙️ ADVANCED BOOKING OPTIONS
+            // ⚙️ ADVANCED BOOKING OPTIONS 
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = colors.cardBg),
@@ -269,7 +260,7 @@ fun MainScreen(
                         Text("⚙️ Booking Options", color = colors.accent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Spacer(Modifier.height(12.dp))
                         
-                        // Travel Class Selection (With ALL 13 Classes)
+                        // Travel Class Selection
                         Text("Travel Class", color = colors.hint, fontSize = 12.sp)
                         ExposedDropdownMenuBox(
                             expanded = showClassDropdown,
@@ -288,7 +279,7 @@ fun MainScreen(
                             )
                             ExposedDropdownMenu(
                                 expanded = showClassDropdown, onDismissRequest = { showClassDropdown = false },
-                                modifier = Modifier.background(colors.fieldBg).heightIn(max = 250.dp) // Added max height for scrolling long list
+                                modifier = Modifier.background(colors.fieldBg).heightIn(max = 250.dp) 
                             ) {
                                 travelClasses.forEach { (code, name) ->
                                     DropdownMenuItem(
@@ -331,13 +322,18 @@ fun MainScreen(
                                 paymentOptions.keys.forEach { category ->
                                     DropdownMenuItem(
                                         text = { Text(category, color = colors.onField) },
-                                        onClick = { selectedPaymentMethod = category; showPaymentDropdown = false }
+                                        onClick = { 
+                                            selectedPaymentMethod = category
+                                            // Reset selected App when category changes
+                                            selectedUPIApp = paymentOptions[category]?.firstOrNull() ?: ""
+                                            showPaymentDropdown = false 
+                                        }
                                     )
                                 }                            
                             }
                         }
                         
-                        // Show Apps if UPI or Wallet selected (With Horizontal Scroll)
+                        // Show Apps if UPI or Wallet selected
                         if (paymentOptions[selectedPaymentMethod]?.isNotEmpty() == true) {
                             Spacer(Modifier.height(8.dp))
                             Text("Select App", color = colors.hint, fontSize = 12.sp)
@@ -372,7 +368,7 @@ fun MainScreen(
             Text("⚠️ Fix invalid passengers before arming", color = colors.warning, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp))
         }
 
-        val canArm = validPassengers.isNotEmpty() && trainNo.matches(Regex("\\d{5}")) && !isLoading && isAccessibilityEnabled
+        val canArm = validPassengers.isNotEmpty() && trainRegex.matches(trainNo) && !isLoading && isAccessibilityEnabled
 
         // 🔥 FIRE BUTTON
         Button(
@@ -380,7 +376,7 @@ fun MainScreen(
                 scope.launch {
                     keyboardController?.hide()
                     
-                    if (!trainNo.matches(Regex("\\d{5}"))) {
+                    if (!trainRegex.matches(trainNo)) {
                         errorMessage = "Enter valid 5-digit train number"
                         return@launch
                     }
@@ -404,8 +400,8 @@ fun MainScreen(
                         )
                         
                         val intent = Intent(context, WorkflowEngine::class.java).apply {
-                            action = "com.aare.vmax.ACTION_START"
-                            putExtra("extra_task", task)
+                            action = WorkflowEngine.ACTION_START 
+                            putExtra(WorkflowEngine.EXTRA_TASK, task)
                         }
                         
                         ContextCompat.startForegroundService(context, intent)
@@ -445,13 +441,23 @@ fun MainScreen(
     }
 }
 
-private fun isAccessibilityServiceEnabled(context: Context, serviceClass: Class<*>): Boolean {
+// ✅ POPUP FIX: यह आपके द्वारा दिया गया सबसे परफेक्ट फंक्शन है
+private fun isAccessibilityServiceEnabled(
+    context: Context,
+    serviceClass: Class<*>
+): Boolean {
     return try {
+        val expected = ComponentName(context, serviceClass)
+
         val enabledServices = Settings.Secure.getString(
-            context.contentResolver, 
+            context.contentResolver,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: ""
-        enabledServices.contains(serviceClass.simpleName) 
+        ) ?: return false
+
+        enabledServices.split(":").any {
+            ComponentName.unflattenFromString(it) == expected
+        }
+
     } catch (e: Exception) {
         false
     }
