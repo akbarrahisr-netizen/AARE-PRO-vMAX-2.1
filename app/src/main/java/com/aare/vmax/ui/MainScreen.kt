@@ -35,6 +35,10 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 
+// ✅ NEW IMPORTS FOR BULLETPROOF ACCESSIBILITY CHECK
+import android.view.accessibility.AccessibilityManager
+import android.accessibilityservice.AccessibilityServiceInfo
+
 import com.aare.vmax.core.orchestrator.WorkflowEngine 
 import com.aare.vmax.core.model.PassengerData
 import com.aare.vmax.core.model.SniperTask
@@ -62,7 +66,7 @@ fun MainScreen(
         mutableStateOf(listOf(PassengerData(id = UUID.randomUUID().toString()))) 
     }
     
-    // ⚙️ Advanced Booking State (13 Classes + Payments हैं यहाँ!)
+    // ⚙️ Advanced Booking State
     var selectedClass by remember { mutableStateOf("3A") }
     var selectedPaymentMethod by remember { mutableStateOf("UPI") }
     var selectedUPIApp by remember { mutableStateOf("BHIM UPI") }
@@ -101,13 +105,12 @@ fun MainScreen(
     val quotaOptions = listOf("General", "Tatkal", "Premium Tatkal", "Ladies", "Lower Berth/Sr. Citizen", "Divyangjan") 
     val maxPassengers = if (selectedQuota == "General") 6 else 4
     
-    // ✅ POPUP KILLER LOGIC (अब यह ऐप चालू होते ही तुरंत चेक करेगा)
+    // ✅ AUTO-REFRESH LOGIC
     var isAccessibilityEnabled by remember { 
         mutableStateOf(isAccessibilityServiceEnabled(context, WorkflowEngine::class.java)) 
     }
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // जैसे ही आप सेटिंग से ऐप में लौटेंगे, यह तुरंत रिफ्रेश कर देगा
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_START || event == Lifecycle.Event.ON_RESUME) {
@@ -182,14 +185,13 @@ fun MainScreen(
             }
         }
 
-        // ⚠️ Accessibility Warning (अब यह सही से छुप जाएगा)
+        // ⚠️ Accessibility Warning
         if (!isAccessibilityEnabled) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = colors.warning.copy(alpha = 0.1f)),
                 border = BorderStroke(1.dp, colors.warning),
                 modifier = Modifier
                     .fillMaxWidth()
-                    // ✅ पॉपअप पर क्लिक करने से भी रिफ्रेश होगा!
                     .clickable { 
                         isAccessibilityEnabled = isAccessibilityServiceEnabled(context, WorkflowEngine::class.java)
                         if (!isAccessibilityEnabled) {
@@ -267,7 +269,7 @@ fun MainScreen(
                         Text("⚙️ Booking Options", color = colors.accent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Spacer(Modifier.height(12.dp))
                         
-                        // Travel Class Selection (With ALL 13 Classes)
+                        // Travel Class Selection
                         Text("Travel Class", color = colors.hint, fontSize = 12.sp)
                         ExposedDropdownMenuBox(
                             expanded = showClassDropdown,
@@ -339,7 +341,7 @@ fun MainScreen(
                             }
                         }
                         
-                        // Show Apps if UPI or Wallet selected (With Horizontal Scroll)
+                        // Show Apps if UPI or Wallet selected
                         if (paymentOptions[selectedPaymentMethod]?.isNotEmpty() == true) {
                             Spacer(Modifier.height(8.dp))
                             Text("Select App", color = colors.hint, fontSize = 12.sp)
@@ -447,31 +449,26 @@ fun MainScreen(
     }
 }
 
-// ✅ FINAL FIXED FUNCTION (ULTIMATE MERGE)
-// इसमें आपका 'सख्त' तरीका भी है और मेरा 'स्मार्ट' तरीका भी! अब यह कभी धोखा नहीं देगा।
-private fun isAccessibilityServiceEnabled(
-    context: Context,
-    serviceClass: Class<*>
-): Boolean {
-    return try {
-        val expected = ComponentName(context, serviceClass)
-
-        val enabledServices = Settings.Secure.getString(
-            context.contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: return false
-
-        // 1. पहला टेस्ट: आपका सख्त तरीका (Strict Match)
-        val isStrictMatch = enabledServices.split(":").any {
-            ComponentName.unflattenFromString(it) == expected
+// ✅ 100% BULLETPROOF ACCESSIBILITY CHECK (Uses Android System directly)
+private fun isAccessibilityServiceEnabled(context: Context, serviceClass: Class<*>): Boolean {
+    // 1. सबसे पक्का तरीका: Android के AccessibilityManager से डायरेक्ट पूछना
+    try {
+        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+        val enabledServices = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+        for (service in enabledServices) {
+            val serviceInfo = service.resolveInfo.serviceInfo
+            if (serviceInfo.packageName == context.packageName && serviceInfo.name == serviceClass.name) {
+                return true
+            }
         }
-        
-        // 2. दूसरा टेस्ट: मेरा स्मार्ट तरीका (अगर पहला फेल हो जाए)
-        val isSmartMatch = enabledServices.contains(serviceClass.simpleName, ignoreCase = true)
-        
-        // अगर दोनों में से कोई भी 'True' है, तो सर्विस चालू मानी जाएगी!
-        isStrictMatch || isSmartMatch
+    } catch (e: Exception) {
+        // Ignore and try fallback
+    }
 
+    // 2. बैकअप तरीका (Fallback) - अगर ऊपर वाला किसी वजह से काम न करे
+    return try {
+        val settingsVal = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+        settingsVal.contains(serviceClass.simpleName, ignoreCase = true)
     } catch (e: Exception) {
         false
     }
