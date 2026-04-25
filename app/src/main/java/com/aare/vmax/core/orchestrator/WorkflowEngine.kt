@@ -1,190 +1,169 @@
-package com.aare.vmax.core.engine
-
-import android.accessibilityservice.AccessibilityService
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.content.Intent
-import android.os.Build
-import android.os.Bundle
-import android.util.Log
-import android.view.accessibility.AccessibilityEvent
-import android.view.accessibility.AccessibilityNodeInfo
-import androidx.core.app.NotificationCompat
-import com.aare.vmax.core.model.SniperTask
-import com.aare.vmax.core.network.TimeSyncManager
-import kotlinx.coroutines.*
-import java.util.Calendar
-import kotlin.math.min
-
-class WorkflowEngine : AccessibilityService() {
-
-    companion object {
-        private const val TAG = "VMAX_Sniper"
-        const val ACTION_START_SNIPER = "com.aare.vmax.START_SNIPER"
-        private const val NOTIF_CHANNEL_ID = "vmax_sniper"
-        private const val NOTIF_ID = 1
-    }
-
-    // 🚀 Coroutine Scope बैकग्राउंड टाइमर के लिए
-    private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
+// ==================== 🎯 IMPROVED: CHILD DETAILS (Points 28-40) ====================
+private fun fillChildDetails(root: AccessibilityNodeInfo) {
+    val task = activeTask ?: return
+    val childNameFields = root.findAccessibilityNodeInfosByViewId(IRCTC.CHILD_NAME)
+    val childAgeSpinners = root.findAccessibilityNodeInfosByViewId(IRCTC.CHILD_AGE)
+    val childGenderSpinners = root.findAccessibilityNodeInfosByViewId(IRCTC.CHILD_GENDER)
     
-    private var currentTask: SniperTask? = null
-    private var isArmed = false // यह तब तक false रहेगा जब तक टाइमर 0 न हो जाए
-
-    override fun onServiceConnected() {
-        super.onServiceConnected()
-        createNotificationChannel()
-        startForeground(NOTIF_ID, buildNotification())
-        Log.d(TAG, "✅ Sniper Engine ONLINE! Waiting for Task...")
+    for (i in 0 until min(childNameFields.size, task.children.size)) {
+        val child = task.children[i]
+        
+        // Point 29-32: Child Name
+        if (childNameFields[i].text.isNullOrBlank()) {
+            setTextToNode(childNameFields[i], child.name)
+            Thread.sleep(30)
+        }
+        
+        // Point 33-37: Child Age Range
+        if (i < childAgeSpinners.size && child.ageRange.isNotBlank()) {
+            selectSpinnerValue(childAgeSpinners[i], child.ageRange, root)
+            Thread.sleep(30)
+        }
+        
+        // Point 38-40: Child Gender
+        if (i < childGenderSpinners.size && child.gender.isNotBlank()) {
+            selectSpinnerValue(childGenderSpinners[i], child.gender, root)
+            Thread.sleep(30)
+        }
     }
+}
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_START_SNIPER) {
-            
-            // 🎯 अब हम पूरा का पूरा SniperTask रिसीव कर रहे हैं
-            val task = intent.getParcelableExtra<SniperTask>("SNIPER_TASK")
-            
-            if (task != null) {
-                currentTask = task
-                Log.d(TAG, "🔥 TARGET LOCKED! Train: ${task.trainNumber} | MS Advance: ${task.msAdvance}")
-                
-                // 🚀 टाइमर स्टार्ट करें! (Coroutine के अंदर)
-                serviceScope.launch {
-                    executeWithPrecision(task)
+// ==================== 🎯 IMPROVED: BOOKING OPTIONS (Points 42-49) ====================
+private fun setBookingOptions(root: AccessibilityNodeInfo) {
+    val task = activeTask ?: return
+    
+    // Point 42: Auto Upgradation
+    val autoUpgrade = root.findAccessibilityNodeInfosByViewId(IRCTC.AUTO_UPGRADE_CHECK)
+    if (autoUpgrade.isNotEmpty() && task.autoUpgradation) {
+        if (!autoUpgrade[0].isChecked) clickNode(autoUpgrade[0])
+        Thread.sleep(30)
+    }
+    
+    // Point 43: Confirm Berths Only
+    val confirmBerth = root.findAccessibilityNodeInfosByViewId(IRCTC.CONFIRM_BERTH_CHECK)
+    if (confirmBerth.isNotEmpty() && task.confirmBerthsOnly) {
+        if (!confirmBerth[0].isChecked) clickNode(confirmBerth[0])
+        Thread.sleep(30)
+    }
+    
+    // Point 44-45: Travel Insurance
+    if (task.insurance) {
+        val insuranceYes = root.findAccessibilityNodeInfosByViewId(IRCTC.INSURANCE_YES)
+        if (insuranceYes.isNotEmpty() && !insuranceYes[0].isChecked) clickNode(insuranceYes[0])
+    } else {
+        val insuranceNo = root.findAccessibilityNodeInfosByViewId(IRCTC.INSURANCE_NO)
+        if (insuranceNo.isNotEmpty() && !insuranceNo[0].isChecked) clickNode(insuranceNo[0])
+    }
+    Thread.sleep(50)
+    
+    // Point 46-49: Booking Option Spinner
+    val bookingOptSpinner = root.findAccessibilityNodeInfosByViewId(IRCTC.BOOKING_OPT_SPINNER)
+    if (bookingOptSpinner.isNotEmpty() && task.bookingOption.value > 0) {
+        selectSpinnerValue(bookingOptSpinner[0], task.bookingOption.display, root)
+        Thread.sleep(50)
+    }
+}
+
+// ==================== 🎯 IMPROVED: COACH & MOBILE (Points 50-52) ====================
+private fun setCoachAndMobile(root: AccessibilityNodeInfo) {
+    val task = activeTask ?: return
+    
+    // Point 50-51: Coach Preference
+    if (task.coachPreferred && task.coachId.isNotBlank()) {
+        val coachInput = root.findAccessibilityNodeInfosByViewId(IRCTC.COACH_PREF_INPUT)
+        if (coachInput.isNotEmpty() && coachInput[0].text.isNullOrBlank()) {
+            setTextToNode(coachInput[0], task.coachId.uppercase())
+            Thread.sleep(30)
+        }
+    }
+    
+    // Point 52: Mobile Number
+    if (task.mobileNo.isNotBlank()) {
+        val mobileInput = root.findAccessibilityNodeInfosByViewId(IRCTC.MOBILE_INPUT)
+        if (mobileInput.isNotEmpty() && mobileInput[0].text.isNullOrBlank()) {
+            setTextToNode(mobileInput[0], task.mobileNo)
+            Thread.sleep(30)
+        }
+    }
+}
+
+// ==================== 🎯 IMPROVED: PAYMENT SELECTION (Points 53-76) ====================
+private fun selectPaymentMethod(root: AccessibilityNodeInfo) {
+    val task = activeTask ?: return
+    
+    when (task.paymentCategory) {
+        PaymentCategory.CARDS_NETBANKING -> {
+            val cardsRadio = root.findAccessibilityNodeInfosByViewId(IRCTC.PAYMENT_CARDS)
+            if (cardsRadio.isNotEmpty()) clickNode(cardsRadio[0])
+        }
+        PaymentCategory.BHIM_UPI -> {
+            val upiRadio = root.findAccessibilityNodeInfosByViewId(IRCTC.PAYMENT_BHIM_UPI)
+            if (upiRadio.isNotEmpty()) clickNode(upiRadio[0])
+        }
+        PaymentCategory.E_WALLETS -> {
+            val walletRadio = root.findAccessibilityNodeInfosByViewId(IRCTC.PAYMENT_EWALLET)
+            if (walletRadio.isNotEmpty()) clickNode(walletRadio[0])
+            Thread.sleep(100)
+            // Wallet selection spinner
+            val walletSpinner = root.findAccessibilityNodeInfosByText(task.walletType.display)
+            if (walletSpinner.isNotEmpty()) clickNode(walletSpinner[0])
+        }
+        PaymentCategory.UPI_ID -> {
+            val upiIdRadio = root.findAccessibilityNodeInfosByViewId(IRCTC.PAYMENT_UPI_ID)
+            if (upiIdRadio.isNotEmpty()) clickNode(upiIdRadio[0])
+            Thread.sleep(100)
+            if (task.upiId.isNotBlank()) {
+                val upiIdInput = root.findAccessibilityNodeInfosByViewId(IRCTC.UPI_ID_INPUT)
+                if (upiIdInput.isNotEmpty()) {
+                    setTextToNode(upiIdInput[0], task.upiId)
                 }
             }
         }
-        return START_STICKY
-    }
-
-    // ==========================================
-    // ⏰ THE TIME SNIPER LOGIC (आपका दिया हुआ कोड)
-    // ==========================================
-    private suspend fun executeWithPrecision(task: SniperTask) {
-        // NTP से सटीक समय प्राप्त करें
-        if (!TimeSyncManager.isSynced()) {
-            TimeSyncManager.syncWithFallback()
-            delay(1000)
-        }
-        
-        // मान लेते हैं task में triggerTime "10:00:00" या "11:00:00" है
-        val targetHour = if (task.triggerTime.startsWith("10")) 10 else 11
-        
-        val targetTime = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, targetHour)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-        
-        // 🎯 Advance time sniper: msAdvance milliseconds पहले
-        val triggerTime = targetTime - task.msAdvance
-        
-        Log.d(TAG, "⏳ Countdown Started... Target MS: $triggerTime")
-
-        // 🚀 CPU बचाने के लिए स्मार्ट लूप
-        while (true) {
-            val now = TimeSyncManager.currentTimeMillis()
-            val diff = triggerTime - now
-            
-            if (diff <= 0) break // समय पूरा हुआ! FIRE!
-            
-            // अगर टाइम ज़्यादा है तो लंबी सांस लें, अगर 50ms बचे हैं तो पागलों की तरह चेक करें
-            if (diff > 1000) delay(500)
-            else if (diff > 50) delay(10)
-            else delay(1) // हर 1ms चेक करो – सुपर सटीकता!
-        }
-        
-        // ⚡ EXACT TIME REACHED! Execute booking
-        val exactTime = TimeSyncManager.getPreciseTimeString()
-        Log.d(TAG, "🎯 FIRING at: $exactTime")
-        executeBooking(task)
-    }
-
-    // ==========================================
-    // 🔫 THE TRIGGER (समय पूरा होने पर क्या होगा)
-    // ==========================================
-    private fun executeBooking(task: SniperTask) {
-        isArmed = true // अब आपका AccessibilityEvent काम करना शुरू करेगा
-        
-        // 🚀 यहाँ आप वो कोड डाल सकते हैं जो 10:00:00 बजते ही सबसे पहले ट्रेन या क्लास पर क्लिक करेगा
-        Log.d(TAG, "🔓 SNIPER IS NOW ARMED AND ACTIVE ON SCREEN!")
-    }
-
-    // ==========================================
-    // ✍️ THE AUTO FILL LOGIC (आपका पुराना कोड)
-    // ==========================================
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // जब तक executeBooking() फायर नहीं होता, तब तक यह कुछ नहीं करेगा
-        if (!isArmed) return
-        val task = currentTask ?: return
-
-        val root = rootInActiveWindow ?: return
-
-        try {
-            if (root.packageName == "cris.org.in.prs.ima") {
-                val nameNodes = root.findAccessibilityNodeInfosByViewId("cris.org.in.prs.ima:id/et_passenger_name")
-                val ageNodes = root.findAccessibilityNodeInfosByViewId("cris.org.in.prs.ima:id/et_passenger_age")
-
-                if (nameNodes.isNotEmpty() && ageNodes.isNotEmpty()) {
-                    val passengers = task.passengers
-
-                    for (i in 0 until min(nameNodes.size, passengers.size)) {
-                        val p = passengers[i]
-                        
-                        if (nameNodes[i].text?.toString().isNullOrBlank() && p.name.isNotBlank()) {
-                            fillTextField(nameNodes[i], p.name)
-                            Thread.sleep(50) 
-                        }
-                        
-                        if (ageNodes[i].text?.toString().isNullOrBlank() && p.age.isNotBlank()) {
-                            fillTextField(ageNodes[i], p.age)
-                            Thread.sleep(50) 
-                        }
-                    }
-
-                    if (nameNodes.size < passengers.size) {
-                        val addBtn = root.findAccessibilityNodeInfosByViewId("cris.org.in.prs.ima:id/tv_add_passanger")
-                            .ifEmpty { root.findAccessibilityNodeInfosByText("Add Passenger") }
-                        
-                        if (addBtn.isNotEmpty()) {
-                            addBtn[0].performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                            Thread.sleep(200) 
-                        }
-                    }
-                }
-            }
-        } finally {
-            root.recycle()
+        PaymentCategory.UPI_APPS -> {
+            val upiAppsRadio = root.findAccessibilityNodeInfosByViewId(IRCTC.PAYMENT_UPI_APPS)
+            if (upiAppsRadio.isNotEmpty()) clickNode(upiAppsRadio[0])
+            Thread.sleep(100)
+            val upiAppSpinner = root.findAccessibilityNodeInfosByText(task.upiApp.display)
+            if (upiAppSpinner.isNotEmpty()) clickNode(upiAppSpinner[0])
         }
     }
-
-    private fun fillTextField(node: AccessibilityNodeInfo, text: String) {
-        val arguments = Bundle()
-        arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-        node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(NOTIF_CHANNEL_ID, "VMAX Sniper", NotificationManager.IMPORTANCE_LOW)
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    Thread.sleep(100)
+    
+    // Point 61-62: Manual Payment & OTP Autofill Preferences
+    if (task.manualPayment) {
+        val manualCheckbox = root.findAccessibilityNodeInfosByText("I will fill payment information manually")
+        if (manualCheckbox.isNotEmpty() && !manualCheckbox[0].isChecked) {
+            clickNode(manualCheckbox[0])
         }
     }
-
-    private fun buildNotification() = NotificationCompat.Builder(this, NOTIF_CHANNEL_ID)
-        .setContentTitle("🎯 VMAX Pro")
-        .setContentText("Sniper countdown active...")
-        .setSmallIcon(android.R.drawable.ic_dialog_info)
-        .setPriority(NotificationCompat.PRIORITY_LOW)
-        .build()
-
-    override fun onInterrupt() {}
-
-    override fun onDestroy() {
-        serviceScope.cancel() // 🧹 सर्विस बंद होने पर टाइमर को भी मार दें (Memory Leak बचाव)
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        super.onDestroy()
-        Log.d(TAG, "🛑 Sniper Engine OFF")
+    
+    updateNotification("💳 Payment: ${task.paymentCategory.display}")
+    
+    // Click Continue/Proceed Button
+    val proceedBtn = root.findAccessibilityNodeInfosByViewId(IRCTC.PROCEED_BTN)
+        .ifEmpty { root.findAccessibilityNodeInfosByViewId(IRCTC.CONTINUE_BTN) }
+    if (proceedBtn.isNotEmpty()) {
+        clickNode(proceedBtn[0])
     }
+}
+
+// ==================== 🎯 IMPROVED: SPINNER SELECTION (Better reliability) ====================
+private fun selectSpinnerValue(spinner: AccessibilityNodeInfo, value: String, root: AccessibilityNodeInfo) {
+    clickNode(spinner)
+    Thread.sleep(150) // Wait for dropdown to open
+    
+    // Try by exact text match first
+    var options = root.findAccessibilityNodeInfosByText(value)
+    
+    // If not found, try partial match
+    if (options.isEmpty()) {
+        options = root.findAccessibilityNodeInfosByText(value.take(10))
+    }
+    
+    if (options.isNotEmpty()) {
+        clickNode(options[0])
+    } else {
+        Log.w(TAG, "⚠️ Spinner option not found: $value")
+    }
+    Thread.sleep(50)
 }
