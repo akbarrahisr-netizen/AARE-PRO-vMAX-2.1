@@ -23,3 +23,18 @@ data class SniperTask(
     val autoFillOTP: Boolean = true,    // ✅ Auto-fill OTP toggle
     val manualPayment: Boolean = false  // ✅ Manual payment toggle
 ) : Parcelable
+
+// ==========================================
+// 💳 Advanced Payment Models (भविष्य के लिए सुरक्षित)
+// ==========================================
+sealed class PaymentMethod {
+    object UPI : PaymentMethod()
+    object NetBanking : PaymentMethod()
+    object CreditCard : PaymentMethod()
+    object DebitCard : PaymentMethod()
+    object EWallet : PaymentMethod()
+    object CashCard : PaymentMethod()
+    
+    data class UPIApp(val appName: String) : PaymentMethod()
+    data class EWalletApp(val walletName: String) : PaymentMethod()
+}
