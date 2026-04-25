@@ -7,6 +7,5 @@
     android:canPerformGestures="true"
     android:canRequestFilterKeyEvents="false"
     android:packageNames="cris.org.in.prs.ima"
-    android:settingsActivity="com.aare.vmax.MainActivity"
     android:description="@string/accessibility_service_description"
     android:isAccessibilityTool="true" />
