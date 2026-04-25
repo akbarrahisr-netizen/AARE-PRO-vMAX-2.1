@@ -1,476 +1,216 @@
-package com.aare.vmax.core.orchestrator
+package com.aare.vmax.ui
 
-import android.accessibilityservice.AccessibilityService
+import android.content.*
+import android.provider.Settings
+import android.widget.Toast
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.*
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.*
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.*
+import androidx.compose.ui.unit.*
+import androidx.lifecycle.*
+import android.view.accessibility.AccessibilityManager
 import android.accessibilityservice.AccessibilityServiceInfo
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.os.Bundle
-import android.util.Log
-import android.view.accessibility.AccessibilityEvent
-import android.view.accessibility.AccessibilityNodeInfo
-import androidx.core.content.ContextCompat
-import com.aare.vmax.core.model.PassengerData
-import com.aare.vmax.core.model.BookingOptions
-import com.aare.vmax.core.model.SniperTask
-import kotlinx.coroutines.*
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import java.util.*
 
-// ✅ SAFE RECYCLE
-object SafeRecycle {
-    fun recycle(node: AccessibilityNodeInfo?) {
-        try { node?.recycle() } catch (_: Exception) {}
+import com.aare.vmax.core.orchestrator.WorkflowEngine 
+import com.aare.vmax.core.model.*
+import com.aare.vmax.ui.components.PassengerCard
+import com.aare.vmax.ui.theme.VMaxColors
+import kotlinx.coroutines.launch
+import java.util.UUID
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MainScreen(onServiceResult: (Boolean, String?) -> Unit = { _, _ -> }) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val keyboard = LocalSoftwareKeyboardController.current
+    val colors = VMaxColors.current
+    
+    val trainRegex = remember { Regex("\\d{5}") }
+    val digitRegex = remember { Regex("\\d*") }
+
+    // 🧠 Core State
+    var trainNo by remember { mutableStateOf("12506") }
+    var selectedQuota by remember { mutableStateOf("Tatkal") }
+    var passengerList by remember { mutableStateOf(listOf(PassengerData(id = UUID.randomUUID().toString()))) }
+    
+    // ⚙️ Advanced Booking Options (From your Screenshots)
+    var travelClass by remember { mutableStateOf("3A") }
+    var autoUpgradation by remember { mutableStateOf(false) }
+    var confirmBerthsOnly by remember { mutableStateOf(false) }
+    var travelInsurance by remember { mutableStateOf(true) }
+    var bookingOption by remember { mutableStateOf("None") }
+    var coachPreferred by remember { mutableStateOf(false) }
+    var coachId by remember { mutableStateOf("") }
+    var mobileNo by remember { mutableStateOf("") }
+
+    // 💳 Payment Suite
+    var paymentMethod by remember { mutableStateOf("UPI apps") }
+    var selectedApp by remember { mutableStateOf("PhonePe") }
+    var autofillOTP by remember { mutableStateOf(false) }
+
+    var isLoading by remember { mutableStateOf(false) }
+    var showQuotaMenu by remember { mutableStateOf(false) }
+
+    // 🗂️ Data Lists
+    val quotaOptions = listOf("General", "Tatkal", "Premium Tatkal", "Ladies", "Lower Berth")
+    val classes = remember { listOf("EA", "1A", "2A", "3A", "CC", "3E", "EC", "SL", "FC", "2S", "VS", "VC", "EV") }
+    val payMethods = listOf("e-Wallets", "Netbanking/Cards", "UPI ID", "UPI apps")
+    val upiApps = mapOf("UPI apps" to listOf("PhonePe", "Paytm", "CRED UPI", "BHIM UPI", "Google Pay"), "e-Wallets" to listOf("IRCTC", "MobiKwik", "Paytm Wallet"))
+
+    // ✅ Robust Accessibility Check
+    var isAccessibilityEnabled by remember { mutableStateOf(isAccessibilityServiceEnabled(context, WorkflowEngine::class.java)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) isAccessibilityEnabled = isAccessibilityServiceEnabled(context, WorkflowEngine::class.java)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    fun recycleAll(nodes: Collection<AccessibilityNodeInfo>?) {
-        nodes?.forEach { recycle(it) }
+
+    Column(modifier = Modifier.fillMaxSize().background(colors.background).padding(16.dp)) {
+        
+        // 🚆 TRAIN + QUOTA
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+                value = trainNo, onValueChange = { if (it.length <= 5 && it.matches(digitRegex)) trainNo = it },
+                label = { Text("Train No") }, modifier = Modifier.weight(0.6f),
+                isError = trainNo.isNotBlank() && !trainRegex.matches(trainNo)
+            )
+            ExposedDropdownMenuBox(expanded = showQuotaMenu, onExpandedChange = { showQuotaMenu = it }, modifier = Modifier.weight(0.4f)) {
+                OutlinedTextField(value = selectedQuota, onValueChange = {}, readOnly = true, label = { Text("Quota") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(showQuotaMenu) }, modifier = Modifier.menuAnchor())
+                ExposedDropdownMenu(expanded = showQuotaMenu, onDismissRequest = { showQuotaMenu = false }) {
+                    quotaOptions.forEach { DropdownMenuItem(text = { Text(it) }, onClick = { selectedQuota = it; showQuotaMenu = false }) }
+                }
+            }
+        }
+
+        // ⚠️ ACCESSIBILITY WARNING CARD
+        if (!isAccessibilityEnabled) {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp).clickable { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                border = BorderStroke(1.dp, Color(0xFFFFA500)),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFA500).copy(alpha = 0.1f))
+            ) {
+                Text("⚠️ VMAX Service is OFF (Tap to fix & refresh)", modifier = Modifier.padding(12.dp), color = Color(0xFFFFA500), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            }
+        }
+
+        val listState = rememberLazyListState()
+        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            
+            // 👥 PASSENGERS
+            item { Text("👥 Passengers (${passengerList.count { it.isFilled() }} valid)", color = colors.accent, modifier = Modifier.padding(vertical = 8.dp)) }
+            itemsIndexed(passengerList, key = { _, it -> it.id }) { index, p ->
+                PassengerCard(passenger = p, passengerIndex = index, onUpdate = { u -> passengerList = passengerList.toMutableList().apply { this[index] = u } }, onRemove = { if (passengerList.size > 1) passengerList = passengerList.filter { it.id != p.id } })
+            }
+            
+            item {
+                TextButton(onClick = { passengerList = passengerList + PassengerData(id = UUID.randomUUID().toString()); scope.launch { listState.animateScrollToItem(passengerList.lastIndex) } }) { Text("+ Add Passenger") }
+                
+                // ⚙️ ADVANCED OPTIONS (From your Screen 524981)
+                Card(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), border = BorderStroke(1.dp, colors.accent.copy(alpha = 0.2f))) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("⚙️ Booking Options", fontWeight = FontWeight.Bold, color = colors.accent)
+                        
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = autoUpgradation, onCheckedChange = { autoUpgradation = it })
+                            Text("Consider Auto upgradation", fontSize = 12.sp)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = confirmBerthsOnly, onCheckedChange = { confirmBerthsOnly = it })
+                            Text("Book only if confirm berths are allotted", fontSize = 12.sp)
+                        }
+                        
+                        Text("Travel Insurance", modifier = Modifier.padding(top = 8.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Row {
+                            RadioButton(selected = travelInsurance, onClick = { travelInsurance = true })
+                            Text("Yes", modifier = Modifier.align(Alignment.CenterVertically))
+                            Spacer(Modifier.width(10.dp))
+                            RadioButton(selected = !travelInsurance, onClick = { travelInsurance = false })
+                            Text("No", modifier = Modifier.align(Alignment.CenterVertically))
+                        }
+                        
+                        // Class Selection (All 13)
+                        var showClasses by remember { mutableStateOf(false) }
+                        Box(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                            OutlinedTextField(value = travelClass, onValueChange = {}, readOnly = true, label = { Text("Travel Class") }, modifier = Modifier.fillMaxWidth().clickable { showClasses = true }, enabled = false, colors = OutlinedTextFieldDefaults.colors(disabledTextColor = colors.onField, disabledBorderColor = colors.accent, disabledLabelColor = colors.hint))
+                            DropdownMenu(expanded = showClasses, onDismissRequest = { showClasses = false }, modifier = Modifier.heightIn(max = 300.dp)) {
+                                classes.forEach { c -> DropdownMenuItem(text = { Text(c) }, onClick = { travelClass = c; showClasses = false }) }
+                            }
+                        }
+
+                        // Payment Logic (Scrollable Apps)
+                        Text("Payment Method", modifier = Modifier.padding(top = 12.dp), fontSize = 12.sp, color = colors.hint)
+                        payMethods.forEach { m ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = paymentMethod == m, onClick = { paymentMethod = m; selectedApp = upiApps[m]?.firstOrNull() ?: "Default" })
+                                Text(m, fontSize = 12.sp)
+                            }
+                        }
+                        
+                        if (upiApps[paymentMethod] != null) {
+                            Row(modifier = Modifier.horizontalScroll(rememberScrollState()).padding(top = 8.dp)) {
+                                upiApps[paymentMethod]!!.forEach { app ->
+                                    FilterChip(selected = selectedApp == app, onClick = { selectedApp = app }, label = { Text(app) }, modifier = Modifier.padding(end = 4.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(100.dp))
+            }
+        }
+
+        // 🔥 FIRE BUTTON
+        Button(
+            onClick = {
+                scope.launch {
+                    if (isLoading) return@launch
+                    keyboard?.hide()
+                    isLoading = true
+                    try {
+                        val task = SniperTask(
+                            taskId = UUID.randomUUID().toString(), trainNumber = trainNo, travelClass = travelClass, quota = selectedQuota, passengers = passengerList.filter { it.isFilled() },
+                            paymentMethod = paymentMethod, upiApp = selectedApp, autoUpgradation = autoUpgradation, confirmBerthsOnly = confirmBerthsOnly, insurance = travelInsurance
+                        )
+                        // ✅ SIGNAL TRIGGER (Broadcast) - Avoids Service Start Crashes
+                        context.sendBroadcast(Intent("com.aare.vmax.ACTION_START").apply { setPackage(context.packageName); putExtra("extra_task", task) })
+                        Toast.makeText(context, "🎯 Sniper Armed!", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) { Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show() }
+                    finally { isLoading = false }
+                }
+            },
+            enabled = passengerList.any { it.isFilled() } && isAccessibilityEnabled && !isLoading,
+            modifier = Modifier.fillMaxWidth().height(60.dp).padding(bottom = 8.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B0000)),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            if (isLoading) CircularProgressIndicator(color = Color.White) else Text("🔥 ARM THE SNIPER", color = Color.White, fontWeight = FontWeight.Bold)
+        }
     }
 }
 
-class WorkflowEngine : AccessibilityService() {
-
-    companion object {
-        const val ACTION_START = "com.aare.vmax.ACTION_START"
-        const val EXTRA_TASK = "extra_task"
-        private const val TAG = "VMAX_SERVICE"
-
-        private const val RADAR_SCAN_MS = 50L
-        private const val EARLY_FIRE_MS = 200L
-        private const val FIELD_FILL_DELAY_MS = 10L
-        private const val VISIBILITY_TIMEOUT_MS = 2000L
-    }
-
-    private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val actionMutex = Mutex()
-
-    private var activeTask: SniperTask? = null
-    private var isExecuting = false
-    private val textActionBundle = Bundle()
-    private val lowercaseCache = mutableMapOf<String, String>()
-
-    // 🎯 IRCTC IDs
-    private object IRCTCIds {
-        const val PASSENGER_NAME = "cris.org.in.prs.ima:id/et_passenger_name"
-        const val PASSENGER_AGE = "cris.org.in.prs.ima:id/et_passenger_age"
-        const val ADD_PASSENGER_BTN = "cris.org.in.prs.ima:id/btn_add_passenger"
-        
-        const val AUTO_UPGRADATION = "cris.org.in.prs.ima:id/cb_auto_upgrade"
-        const val BOOK_CONFIRM_ONLY = "cris.org.in.prs.ima:id/cb_confirm_only"
-        const val TRAVEL_INSURANCE_YES = "cris.org.in.prs.ima:id/rb_insurance_yes"
-        const val COACH_PREFERRED = "cris.org.in.prs.ima:id/cb_coach_pref"
-        const val COACH_ID = "cris.org.in.prs.ima:id/et_coach_id"
-        
-        const val PAYMENT_UPI = "cris.org.in.prs.ima:id/payment_upi"
-        const val PAYMENT_NETBANKING = "cris.org.in.prs.ima:id/payment_netbanking"
-        const val PAYMENT_CARD = "cris.org.in.prs.ima:id/payment_card"
-        const val PAYMENT_WALLET = "cris.org.in.prs.ima:id/payment_wallet"
-        const val UPI_BHIM = "cris.org.in.prs.ima:id/bhim_upi"
-        const val UPI_PHONEPE = "cris.org.in.prs.ima:id/phonepe"
-        const val UPI_PAYTM = "cris.org.in.prs.ima:id/paytm_upi"
-        const val UPI_CRED = "cris.org.in.prs.ima:id/cred_upi"
-        const val WALLET_IRCTC = "cris.org.in.prs.ima:id/irctc_wallet"
-        const val WALLET_MOBIKWIK = "cris.org.in.prs.ima:id/mobikwik"
-        const val AUTO_FILL_OTP = "cris.org.in.prs.ima:id/cb_autofill_otp"
-        const val MANUAL_PAYMENT = "cris.org.in.prs.ima:id/cb_manual_payment"
-        const val BOOK_NOW_BTN = "cris.org.in.prs.ima:id/btn_book_now"
-    }
-
-    // ✅ BROADCAST RECEIVER
-    private val receiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == ACTION_START) {
-                Log.d(TAG, "🔥 Sniper Trigger Received in Service!")
-                @Suppress("DEPRECATION")
-                val task = intent.getParcelableExtra<SniperTask>(EXTRA_TASK)
-                startSniper(task)
+private fun isAccessibilityServiceEnabled(context: Context, serviceClass: Class<*>): Boolean {
+    try {
+        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+        val enabledServices = am?.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+        if (enabledServices != null) {
+            for (service in enabledServices) {
+                val serviceInfo = service.resolveInfo.serviceInfo
+                if (serviceInfo.packageName == context.packageName && (serviceInfo.name == serviceClass.name || serviceInfo.name.endsWith(serviceClass.simpleName))) return true
             }
         }
-    }
-
-    override fun onServiceConnected() {
-        super.onServiceConnected()
-
-        // 🔥 USTAAD'S FIX: FOREGROUND SERVICE ENABLE (MANDATORY)
-        startForegroundServiceSafe()
-
-        serviceInfo = AccessibilityServiceInfo().apply {
-            eventTypes = AccessibilityEvent.TYPES_ALL_MASK
-            feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            notificationTimeout = 20
-            flags = AccessibilityServiceInfo.FLAG_REQUEST_TOUCH_EXPLORATION_MODE or
-                    AccessibilityServiceInfo.DEFAULT
-        }
-        
-        val filter = IntentFilter(ACTION_START)
-        try {
-            ContextCompat.registerReceiver(this, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
-            Log.d(TAG, "✅ Service Connected & Receiver Registered")
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Failed to register receiver", e)
-        }
-    }
-
-    // 🔥 FOREGROUND NOTIFICATION FUNCTION
-    private fun startForegroundServiceSafe() {
-        try {
-            val channelId = "vmax_channel"
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                val channel = android.app.NotificationChannel(
-                    channelId,
-                    "VMAX Service",
-                    android.app.NotificationManager.IMPORTANCE_LOW
-                )
-                manager.createNotificationChannel(channel)
-            }
-
-            val notification = androidx.core.app.NotificationCompat.Builder(this, channelId)
-                .setContentTitle("VMAX Running")
-                .setContentText("Sniper Active")
-                .setSmallIcon(android.R.drawable.ic_media_play) // Make sure you have an icon here
-                .build()
-
-            startForeground(1, notification)
-            Log.d(TAG, "✅ Foreground Service Started Successfully")
-
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Foreground failed", e)
-        }
-    }
-
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // ⚠️ LIGHTWEIGHT
-    }
-
-    override fun onInterrupt() {
-        Log.d(TAG, "⚠️ Service Interrupted")
-        isExecuting = false
-    }
-
-    override fun onDestroy() {
-        Log.d(TAG, "🛑 Service Destroyed")
-        try { unregisterReceiver(receiver) } catch (_: Exception) {}
-        engineScope.cancel()
-        textActionBundle.clear()
-        lowercaseCache.clear()
-        activeTask = null
-        
-        // Stop foreground when service is destroyed
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        }
-        super.onDestroy()
-    }
-
-    private fun startSniper(task: SniperTask?) {
-        if (task == null) {
-            Log.e(TAG, "❌ Task is null")
-            return
-        }
-
-        Log.d(TAG, "🚀 Sniper Armed for Train: ${task.trainNumber}")
-        activeTask = task
-        schedulePreFireCheck()
-    }
-
-    private fun schedulePreFireCheck() {
-        val task = activeTask ?: return
-
-        engineScope.launch {
-            val targetHour = when (task.quota) {
-                "General" -> 8
-                else -> if (task.travelClass in listOf("1A", "2A", "3A", "3E", "CC")) 10 else 11
-            }
-
-            val calendar = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, targetHour)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-                if (timeInMillis <= System.currentTimeMillis()) {
-                    add(Calendar.DAY_OF_YEAR, 1)
-                }
-            }
-
-            val exactFireTimeMs = calendar.timeInMillis - EARLY_FIRE_MS
-
-            if (System.currentTimeMillis() >= exactFireTimeMs) {
-                executeWorkflow()
-                return@launch
-            }
-
-            Log.d(TAG, "⏰ Waiting for trigger time...")
-            while (System.currentTimeMillis() < exactFireTimeMs && isActive) {
-                delay(10)
-            }
-
-            if (isActive) executeWorkflow()
-        }
-    }
-
-    private suspend fun executeWorkflow() = actionMutex.withLock {
-        if (isExecuting) return@withLock
-        isExecuting = true
-
-        val task = activeTask ?: run {
-            isExecuting = false
-            return@withLock
-        }
-
-        try {
-            Log.d(TAG, "⚡ Executing Workflow!")
-            
-            // 🔥 USTAAD'S CRASH GUARD (EXTRA SAFETY)
-            if (rootInActiveWindow == null) {
-                Log.e(TAG, "❌ Root is NULL — User not on IRCTC screen")
-                return@withLock
-            }
-
-            findAndClickTrainClass(task.trainNumber, task.travelClass)
-
-            var pageLoaded = false
-            val timeoutMs = System.currentTimeMillis() + 5000L
-
-            while (System.currentTimeMillis() < timeoutMs && engineScope.isActive) {
-                val root = rootInActiveWindow
-                if (root != null) {
-                    val nodes = root.findAccessibilityNodeInfosByViewId(IRCTCIds.PASSENGER_NAME)
-                    if (nodes.isNotEmpty()) {
-                        pageLoaded = true
-                        SafeRecycle.recycleAll(nodes)
-                        SafeRecycle.recycle(root)
-                        break
-                    }
-                    SafeRecycle.recycleAll(nodes)
-                    SafeRecycle.recycle(root)
-                }
-                delay(RADAR_SCAN_MS)
-            }
-
-            if (!pageLoaded) {
-                Log.e(TAG, "❌ Page did not load in time")
-                return@withLock
-            }
-
-            val activePassengers = task.passengers.filter { it.isFilled() }
-            val bookingOptions = BookingOptions() 
-
-            // 1. Fill details
-            for ((index, passenger) in activePassengers.withIndex()) {
-                fillPassengerComplete(passenger, index, bookingOptions)
-                if (index < activePassengers.lastIndex) {
-                    clickAddPassenger()
-                    waitForNewForm(index + 1)
-                }
-            }
-            
-            // 2. Options
-            applyBookingOptions(bookingOptions)
-            
-            // 3. Payment
-            triggerPaymentFlow(task)
-
-            Log.d(TAG, "✅ Workflow Complete!")
-
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ FATAL CRASH IN WORKFLOW", e)
-        } finally {
-            isExecuting = false
-            textActionBundle.clear()
-            if (lowercaseCache.size > 100) lowercaseCache.clear()
-        }
-    }
-
-    private suspend fun fillPassengerComplete(passenger: PassengerData, index: Int, options: BookingOptions) {
-        val root = rootInActiveWindow ?: return
-        try {
-            fillFieldById(root, IRCTCIds.PASSENGER_NAME, passenger.name, index)
-            delay(FIELD_FILL_DELAY_MS)
-            fillFieldById(root, IRCTCIds.PASSENGER_AGE, passenger.age, index)
-            
-            selectDropdown("Gender", passenger.gender)
-            if (passenger.berthPreference != "No Preference") selectDropdown("Berth Preference", passenger.berthPreference)
-            if (passenger.meal != "No Food") selectDropdown("Meal", passenger.meal)
-            
-            if (passenger.optBerth) findAndClickByText(listOf("Opt Berth"))
-            if (passenger.bedRoll) findAndClickByText(listOf("Bed Roll"))
-            if (passenger.availConcession) findAndClickByText(listOf("Concession"))
-        } finally {
-            SafeRecycle.recycle(root)
-        }
-    }
-
-    private suspend fun applyBookingOptions(options: BookingOptions) {
-        val root = rootInActiveWindow ?: return
-        try {
-            if (options.considerAutoUpgradation) clickById(root, IRCTCIds.AUTO_UPGRADATION)
-            if (options.bookOnlyIfConfirm) clickById(root, IRCTCIds.BOOK_CONFIRM_ONLY)
-            if (options.travelInsurance) clickById(root, IRCTCIds.TRAVEL_INSURANCE_YES)
-            
-            if (options.coachPreferred && options.coachId.isNotBlank()) {
-                clickById(root, IRCTCIds.COACH_PREFERRED)
-                fillFieldById(root, IRCTCIds.COACH_ID, options.coachId, 0)
-            }
-        } finally {
-            SafeRecycle.recycle(root)
-        }
-    }
-
-    private suspend fun triggerPaymentFlow(task: SniperTask) {
-        delay(200)
-        val root = rootInActiveWindow ?: return
-        
-        try {
-            when (task.paymentMethod) {
-                "UPI" -> clickById(root, IRCTCIds.PAYMENT_UPI)
-                "Netbanking", "Net Banking" -> clickById(root, IRCTCIds.PAYMENT_NETBANKING)
-                "Card", "Credit/Debit Cards" -> clickById(root, IRCTCIds.PAYMENT_CARD)
-                "e-Wallet", "e-Wallets" -> clickById(root, IRCTCIds.PAYMENT_WALLET)
-            }
-            
-            delay(300)
-            val freshRoot = rootInActiveWindow ?: return
-            
-            if (task.paymentMethod == "UPI") {
-                when (task.upiApp) {
-                    "BHIM UPI" -> clickById(freshRoot, IRCTCIds.UPI_BHIM)
-                    "PhonePe" -> clickById(freshRoot, IRCTCIds.UPI_PHONEPE)
-                    "Paytm" -> clickById(freshRoot, IRCTCIds.UPI_PAYTM)
-                    "CRED UPI" -> clickById(freshRoot, IRCTCIds.UPI_CRED)
-                    else -> findAndClickByText(listOf("BHIM/UPI", "UPI apps"))
-                }
-            }
-            
-            if (task.autoFillOTP) clickById(freshRoot, IRCTCIds.AUTO_FILL_OTP)
-            if (task.manualPayment) clickById(freshRoot, IRCTCIds.MANUAL_PAYMENT)
-            
-            delay(500)
-            val clickedDirectly = clickById(freshRoot, IRCTCIds.BOOK_NOW_BTN)
-            if (!clickedDirectly) findAndClickByText(listOf("Review Journey", "Proceed", "Pay Now", "Book Now"))
-            
-            SafeRecycle.recycle(freshRoot)
-        } finally {
-            SafeRecycle.recycle(root)
-        }
-    }
-
-    private fun fillFieldById(root: AccessibilityNodeInfo, id: String, text: String, index: Int): Boolean {
-        val nodes = root.findAccessibilityNodeInfosByViewId(id) ?: return false
-        if (nodes.size > index && nodes[index].isEditable) {
-            textActionBundle.clear()
-            textActionBundle.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-            val success = nodes[index].performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, textActionBundle)
-            SafeRecycle.recycleAll(nodes)
-            return success
-        }
-        SafeRecycle.recycleAll(nodes)
-        return false
-    }
-
-    private fun clickById(root: AccessibilityNodeInfo, id: String): Boolean {
-        val nodes = root.findAccessibilityNodeInfosByViewId(id) ?: return false
-        if (nodes.isNotEmpty() && nodes[0].isClickable) {
-            val success = nodes[0].performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            SafeRecycle.recycleAll(nodes)
-            return success
-        }
-        SafeRecycle.recycleAll(nodes)
-        return false
-    }
-
-    private suspend fun selectDropdown(label: String, value: String) {
-        if (findAndClickByText(listOf(label))) {
-            delay(300) 
-            findAndClickByText(listOf(value))
-        }
-    }
-
-    private fun findAndClickTrainClass(trainNo: String, className: String): Boolean {
-        val root = rootInActiveWindow ?: return false
-        return try {
-            val trainNodes = root.findAccessibilityNodeInfosByText(trainNo) ?: return false
-            if (trainNodes.isEmpty()) return false
-            for (i in 1 until trainNodes.size) SafeRecycle.recycle(trainNodes[i])
-            
-            var card = trainNodes[0].parent
-            var depth = 0
-            while (card != null && depth < 5) {
-                try {
-                    val classes = card.findAccessibilityNodeInfosByText(className)
-                    if (!classes.isNullOrEmpty()) {
-                        for (i in 1 until classes.size) SafeRecycle.recycle(classes[i])
-                        val clicked = classes[0].performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                        SafeRecycle.recycle(classes[0])
-                        return clicked
-                    }
-                    classes?.forEach { SafeRecycle.recycle(it) }
-                } finally {
-                    val nextParent = card.parent
-                    SafeRecycle.recycle(card)
-                    card = nextParent
-                    depth++
-                }
-            }
-            false
-        } finally {
-            SafeRecycle.recycle(root)
-        }
-    }
-
-    private suspend fun waitForNewForm(requiredCount: Int) {
-        val end = System.currentTimeMillis() + VISIBILITY_TIMEOUT_MS
-        while (System.currentTimeMillis() < end && engineScope.isActive) {
-            val root = rootInActiveWindow
-            val count = root?.findAccessibilityNodeInfosByViewId(IRCTCIds.PASSENGER_NAME)?.size ?: 0
-            SafeRecycle.recycle(root)
-            if (count >= requiredCount + 1) return
-            delay(RADAR_SCAN_MS)
-        }
-    }
-
-    private fun clickAddPassenger() {
-        val root = rootInActiveWindow ?: return
-        try {
-            val nodes = root.findAccessibilityNodeInfosByViewId(IRCTCIds.ADD_PASSENGER_BTN) ?: return
-            if (nodes.isNotEmpty() && nodes[0].isClickable && nodes[0].isVisibleToUser) {
-                nodes[0].performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            }
-            SafeRecycle.recycleAll(nodes)
-        } finally {
-            SafeRecycle.recycle(root)
-        }
-    }
-
-    private fun findAndClickByText(terms: List<String>): Boolean {
-        val root = rootInActiveWindow ?: return false
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-
-        while (queue.isNotEmpty()) {
-            val node = queue.removeFirst()
-            try {
-                val nodeText = node.text?.toString() ?: ""
-                val lowerText = lowercaseCache.getOrPut(nodeText) { nodeText.lowercase() }
-
-                val isMatch = terms.any { term ->
-                    val lowerTerm = lowercaseCache.getOrPut(term) { term.lowercase() }
-                    lowerText.contains(lowerTerm)
-                }
-
-                if (isMatch && node.isClickable && node.isVisibleToUser) {
-                    return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                }
-
-                repeat(node.childCount) { i ->
-                    try { node.getChild(i)?.let { queue.add(it) } } catch (_: Exception) {}
-                }
-            } finally {
-                if (node !== root) SafeRecycle.recycle(node)
-            }
-        }
-        return false
-    }
+    } catch (e: Exception) { }
+    return false
 }
