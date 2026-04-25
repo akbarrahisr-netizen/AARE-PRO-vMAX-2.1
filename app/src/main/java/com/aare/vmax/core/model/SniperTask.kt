@@ -11,18 +11,31 @@ data class SniperTask(
     val quota: String,
     val passengers: List<PassengerData>,
     
-    // 💳 Payment Suite
-    val paymentMethod: String = "UPI apps",
-    val upiApp: String = "BHIM UPI",
+    val payment: PaymentDetails = PaymentDetails(),
     
-    // ⚙️ Advanced Booking Options (From Screenshots 524981)
     val autoUpgradation: Boolean = false,
     val confirmBerthsOnly: Boolean = false,
     val insurance: Boolean = true,
-    val bookingOption: String = "None", // None, Same Coach, 1 Lower, 2 Lower
+    
+    val bookingOption: String = "None",
     val coachPreferred: Boolean = false,
     val coachId: String = "",
-    val mobileNo: String = "",
-    val manualPayment: Boolean = false,
-    val autofillOTP: Boolean = true
-) : Parcelable
+    val mobileNo: String = ""
+) : Parcelable {
+    
+    fun isReadyForBooking(): Boolean {
+        return trainNumber.isNotBlank() &&
+               travelClass.isNotBlank() &&
+               quota.isNotBlank() &&
+               passengers.any { it.isFilled() } &&
+               payment.isValid()
+    }
+
+    fun getPaymentSummary(): String {
+        return if (payment.manualPayment) {
+            "💳 Manual Payment - ${payment.getDisplayText()}"
+        } else {
+            "💳 Auto - ${payment.getDisplayText()} | OTP: ${if(payment.autofillOTP) "✅" else "❌"}"
+        }
+    }
+}
