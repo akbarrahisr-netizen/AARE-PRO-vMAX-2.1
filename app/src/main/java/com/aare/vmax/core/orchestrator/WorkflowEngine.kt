@@ -8,6 +8,7 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.aare.vmax.core.model.PassengerData
+import com.aare.vmax.core.model.BookingOptions // ✅ नया मॉडल इम्पोर्ट किया
 import com.aare.vmax.core.model.SniperTask
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
@@ -46,12 +47,30 @@ class WorkflowEngine : AccessibilityService() {
     private val textActionBundle = Bundle()
     private val lowercaseCache = mutableMapOf<String, String>()
 
+    // 🎯 100% Merged IRCTC IDs
     private object IRCTCIds {
         const val PASSENGER_NAME = "cris.org.in.prs.ima:id/et_passenger_name"
         const val PASSENGER_AGE = "cris.org.in.prs.ima:id/et_passenger_age"
         const val ADD_PASSENGER_BTN = "cris.org.in.prs.ima:id/btn_add_passenger"
         const val REVIEW_JOURNEY_BTN = "cris.org.in.prs.ima:id/btn_review"
+        
+        // Advanced Options
+        const val AUTO_UPGRADATION = "cris.org.in.prs.ima:id/cb_auto_upgrade"
+        const val BOOK_CONFIRM_ONLY = "cris.org.in.prs.ima:id/cb_confirm_only"
+        const val TRAVEL_INSURANCE_YES = "cris.org.in.prs.ima:id/rb_insurance_yes"
+        const val BOOKING_OPTION_NONE = "cris.org.in.prs.ima:id/rb_booking_none"
+        const val BOOKING_OPTION_SAME_COACH = "cris.org.in.prs.ima:id/rb_booking_same_coach"
+        const val BOOKING_OPTION_1_LOWER = "cris.org.in.prs.ima:id/rb_booking_1_lower"
+        const val BOOKING_OPTION_2_LOWER = "cris.org.in.prs.ima:id/rb_booking_2_lower"
+        const val COACH_PREFERRED = "cris.org.in.prs.ima:id/cb_coach_pref"
+        const val COACH_ID = "cris.org.in.prs.ima:id/et_coach_id"
+        const val MOBILE_NO = "cris.org.in.prs.ima:id/et_mobile"
+        
+        // Payment
         const val PAYMENT_UPI = "cris.org.in.prs.ima:id/payment_upi"
+        const val PAYMENT_WALLET = "cris.org.in.prs.ima:id/payment_wallet"
+        const val BOOK_NOW_BTN = "cris.org.in.prs.ima:id/btn_book_now"
+        const val AUTO_FILL_OTP = "cris.org.in.prs.ima:id/cb_autofill_otp"
     }
 
     override fun onServiceConnected() {
@@ -157,17 +176,24 @@ class WorkflowEngine : AccessibilityService() {
             if (!pageLoaded) return@withLock
 
             val activePassengers = task.passengers.filter { it.isFilled() }
+            
+            // ✅ डिफ़ॉल्ट बुकिंग ऑप्शंस ले रहे हैं (अगर SniperTask में अभी नहीं जुड़ा है)
+            val bookingOptions = BookingOptions() 
 
+            // 1. Fill passenger details (Merged Logic)
             for ((index, passenger) in activePassengers.withIndex()) {
-                if (fillPassengerData(passenger, index)) {
-                    if (index < activePassengers.lastIndex) {
-                        clickAddPassenger()
-                        waitForNewForm(index + 1)
-                    }
+                fillPassengerComplete(passenger, index, bookingOptions)
+                if (index < activePassengers.lastIndex) {
+                    clickAddPassenger()
+                    waitForNewForm(index + 1)
                 }
             }
-
-            triggerPaymentFlow()
+            
+            // 2. Apply advanced options
+            applyBookingOptions(bookingOptions)
+            
+            // 3. Navigate to payment
+            triggerPaymentFlow(bookingOptions)
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ Execution error", e)
@@ -178,30 +204,135 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    private suspend fun fillPassengerData(passenger: PassengerData, index: Int): Boolean {
-        val root = rootInActiveWindow ?: return false
-        return try {
-            val names = root.findAccessibilityNodeInfosByViewId(IRCTCIds.PASSENGER_NAME)
-            val ages = root.findAccessibilityNodeInfosByViewId(IRCTCIds.PASSENGER_AGE)
+    // ========================================
+    // ✍️ 100% MERGED: COMPLETE PASSENGER FILLING
+    // ========================================
+    private suspend fun fillPassengerComplete(
+        passenger: PassengerData,
+        index: Int,
+        options: BookingOptions
+    ) {
+        val root = rootInActiveWindow ?: return
+        try {
+            // Fill basic details
+            fillFieldById(root, IRCTCIds.PASSENGER_NAME, passenger.name, index)
+            delay(FIELD_FILL_DELAY_MS)
+            fillFieldById(root, IRCTCIds.PASSENGER_AGE, passenger.age, index)
+            
+            // Select gender
+            selectDropdown("Gender", passenger.gender)
+            
+            // Select berth preference
+            if (passenger.berthPreference != "No Preference") {
+                selectDropdown("Berth Preference", passenger.berthPreference)
+            }
+            
+            // Select meal (मॉडल में 'meal' है, 'mealPreference' नहीं)
+            if (passenger.meal != "No Food") {
+                selectDropdown("Meal", passenger.meal)
+            }
+            
+            // Handle checkboxes (Find text and click)
+            if (passenger.optBerth) findAndClickByText(listOf("Opt Berth"))
+            if (passenger.bedRoll) findAndClickByText(listOf("Bed Roll"))
+            if (passenger.availConcession) findAndClickByText(listOf("Concession"))
+            
+        } finally {
+            SafeRecycle.recycle(root)
+        }
+    }
 
-            if (names.size > index && ages.size > index && names[index].isEditable && ages[index].isEditable) {
-
-                textActionBundle.clear()
-                textActionBundle.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, passenger.name)
-                names[index].performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, textActionBundle)
-
-                delay(FIELD_FILL_DELAY_MS)
-
-                textActionBundle.clear()
-                textActionBundle.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, passenger.age)
-                ages[index].performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, textActionBundle)
-
-                true
-            } else {
-                false
+    // ========================================
+    // ⚙️ ADVANCED BOOKING OPTIONS
+    // ========================================
+    private suspend fun applyBookingOptions(options: BookingOptions) {
+        val root = rootInActiveWindow ?: return
+        try {
+            if (options.considerAutoUpgradation) clickById(root, IRCTCIds.AUTO_UPGRADATION)
+            if (options.bookOnlyIfConfirm) clickById(root, IRCTCIds.BOOK_CONFIRM_ONLY)
+            if (options.travelInsurance) clickById(root, IRCTCIds.TRAVEL_INSURANCE_YES)
+            
+            when (options.bookingOption) {
+                "Same Coach" -> clickById(root, IRCTCIds.BOOKING_OPTION_SAME_COACH)
+                "1 Lower" -> clickById(root, IRCTCIds.BOOKING_OPTION_1_LOWER)
+                "2 Lower" -> clickById(root, IRCTCIds.BOOKING_OPTION_2_LOWER)
+            }
+            
+            if (options.coachPreferred && options.coachId.isNotBlank()) {
+                clickById(root, IRCTCIds.COACH_PREFERRED)
+                fillFieldById(root, IRCTCIds.COACH_ID, options.coachId, 0)
+            }
+            
+            if (options.mobileNo.isNotBlank()) {
+                fillFieldById(root, IRCTCIds.MOBILE_NO, options.mobileNo, 0)
             }
         } finally {
             SafeRecycle.recycle(root)
+        }
+    }
+
+    // ========================================
+    // 💳 SMART PAYMENT FLOW
+    // ========================================
+    private suspend fun triggerPaymentFlow(options: BookingOptions) {
+        delay(200)
+        
+        when (options.paymentMethod) {
+            "UPI" -> {
+                if (options.upiId.isNotBlank()) {
+                    findAndClickByText(listOf("UPI ID", "Pay with UPI ID"))
+                } else {
+                    findAndClickByText(listOf("UPI apps", "BHIM/UPI"))
+                }
+            }
+            "e-Wallet" -> findAndClickByText(listOf("e-Wallets", "Wallets"))
+            "Netbanking" -> findAndClickByText(listOf("Netbanking", "Net Banking"))
+            "Card" -> findAndClickByText(listOf("Credit/Debit Cards", "Credit & Debit Cards"))
+        }
+        
+        if (options.autofillOTP) {
+            val root = rootInActiveWindow
+            if (root != null) {
+                clickById(root, IRCTCIds.AUTO_FILL_OTP)
+                SafeRecycle.recycle(root)
+            }
+        }
+        
+        // Final submission (Review Journey / Pay)
+        findAndClickByText(listOf("Review Journey", "Proceed", "Pay Now", "Book Now"))
+    }
+
+    // ========================================
+    // 🛠️ HELPER FUNCTIONS (Missing in your code, added here to prevent errors)
+    // ========================================
+    private fun fillFieldById(root: AccessibilityNodeInfo, id: String, text: String, index: Int): Boolean {
+        val nodes = root.findAccessibilityNodeInfosByViewId(id)
+        if (nodes.size > index && nodes[index].isEditable) {
+            textActionBundle.clear()
+            textActionBundle.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+            val success = nodes[index].performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, textActionBundle)
+            SafeRecycle.recycleAll(nodes)
+            return success
+        }
+        SafeRecycle.recycleAll(nodes)
+        return false
+    }
+
+    private fun clickById(root: AccessibilityNodeInfo, id: String): Boolean {
+        val nodes = root.findAccessibilityNodeInfosByViewId(id)
+        if (nodes.isNotEmpty() && nodes[0].isClickable) {
+            val success = nodes[0].performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            SafeRecycle.recycleAll(nodes)
+            return success
+        }
+        SafeRecycle.recycleAll(nodes)
+        return false
+    }
+
+    private suspend fun selectDropdown(label: String, value: String) {
+        if (findAndClickByText(listOf(label))) {
+            delay(300) // वेट फॉर ड्रॉपडाउन टू ओपन
+            findAndClickByText(listOf(value))
         }
     }
 
@@ -210,9 +341,8 @@ class WorkflowEngine : AccessibilityService() {
         return try {
             val trainNodes = root.findAccessibilityNodeInfosByText(trainNo)
             if (trainNodes.isEmpty()) return false
-
             for (i in 1 until trainNodes.size) SafeRecycle.recycle(trainNodes[i])
-
+            
             var card = trainNodes[0].parent
             var depth = 0
             while (card != null && depth < 5) {
@@ -260,11 +390,6 @@ class WorkflowEngine : AccessibilityService() {
         } finally {
             SafeRecycle.recycle(root)
         }
-    }
-
-    private suspend fun triggerPaymentFlow() {
-        delay(200)
-        findAndClickByText(listOf("Review Journey", "Proceed", "Pay Now", "Book Now"))
     }
 
     private fun findAndClickByText(terms: List<String>): Boolean {
