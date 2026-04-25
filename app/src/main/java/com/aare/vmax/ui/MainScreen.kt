@@ -76,12 +76,13 @@ fun MainScreen(
         )
     }
     
+    // ✅ 100% MERGED: नए पेमेंट ऑप्शंस (Google Pay, SBI, Cards वगैरह)
     val paymentOptions = remember {
         mapOf(
-            "UPI" to listOf("BHIM UPI", "PhonePe", "Paytm", "CRED UPI"),
-            "e-Wallets" to listOf("IRCTC iMudra", "MobiKwik"),
-            "Netbanking" to emptyList(),
-            "Card" to emptyList()
+            "UPI" to listOf("BHIM UPI", "PhonePe", "Paytm", "CRED UPI", "Google Pay"),
+            "e-Wallets" to listOf("IRCTC Wallet", "MobiKwik", "Paytm Wallet", "FreeCharge"),
+            "Netbanking" to listOf("SBI", "HDFC", "ICICI", "Axis", "PNB", "BOB"), // मैचिंग के लिए Netbanking
+            "Card" to listOf("Credit Card", "Debit Card", "Cash Card") // मैचिंग के लिए Card
         )
     }
     
@@ -382,7 +383,6 @@ fun MainScreen(
                     errorMessage = null
                     
                     try {
-                        // ✅ MERGED: अब सारी UI की सेटिंग्स SniperTask में पास हो रही हैं!
                         val task = SniperTask(
                             taskId = UUID.randomUUID().toString(),
                             trainNumber = trainNo.trim(),
