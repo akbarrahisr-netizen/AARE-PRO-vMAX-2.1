@@ -31,10 +31,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 
+// ✅ IMPORTS FOR 3-LAYER SECURITY CHECK
 import android.view.accessibility.AccessibilityManager
 import android.accessibilityservice.AccessibilityServiceInfo
 
@@ -56,7 +56,7 @@ fun MainScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     val colors = VMaxColors.current
     
-    // ✅ Regex Cached for Micro-Optimization
+    // ✅ Micro-Optimization: Regex Cached
     val trainRegex = remember { Regex("\\d{5}") }
     val digitRegex = remember { Regex("\\d*") }
 
@@ -74,6 +74,7 @@ fun MainScreen(
     var showClassDropdown by remember { mutableStateOf(false) }
     var showPaymentDropdown by remember { mutableStateOf(false) }
 
+    // 🗂️ All 13 Travel Classes
     val travelClasses = remember {
         listOf(
             "EA" to "First AC (EA)", "1A" to "First AC (1A)", "2A" to "Second AC (2A)",
@@ -84,6 +85,7 @@ fun MainScreen(
         )
     }
     
+    // 💳 Payment Options
     val paymentOptions = remember {
         mapOf(
             "UPI" to listOf("BHIM UPI", "PhonePe", "Paytm", "CRED UPI", "Google Pay"),
@@ -104,7 +106,7 @@ fun MainScreen(
     val quotaOptions = listOf("General", "Tatkal", "Premium Tatkal", "Ladies", "Lower Berth/Sr. Citizen", "Divyangjan") 
     val maxPassengers = if (selectedQuota == "General") 6 else 4
     
-    // ✅ Optimized Auto-Refresh (Only ON_RESUME)
+    // ✅ AUTO-REFRESH LOGIC (Optimized)
     var isAccessibilityEnabled by remember { 
         mutableStateOf(isAccessibilityServiceEnabled(context, WorkflowEngine::class.java)) 
     }
@@ -184,7 +186,7 @@ fun MainScreen(
             }
         }
 
-        // ⚠️ Accessibility Warning (✅ UX FIXED: Simple & Predictable)
+        // ⚠️ Accessibility Warning (✅ Click UX Fixed)
         if (!isAccessibilityEnabled) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = colors.warning.copy(alpha = 0.1f)),
@@ -269,6 +271,7 @@ fun MainScreen(
                         Text("⚙️ Booking Options", color = colors.accent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Spacer(Modifier.height(12.dp))
                         
+                        // Travel Class Selection
                         Text("Travel Class", color = colors.hint, fontSize = 12.sp)
                         ExposedDropdownMenuBox(
                             expanded = showClassDropdown,
@@ -306,6 +309,7 @@ fun MainScreen(
                         
                         Spacer(Modifier.height(12.dp))
                         
+                        // Payment Method Selection
                         Text("Payment Method", color = colors.hint, fontSize = 12.sp)
                         ExposedDropdownMenuBox(
                             expanded = showPaymentDropdown,
@@ -331,7 +335,7 @@ fun MainScreen(
                                         text = { Text(category, color = colors.onField) },
                                         onClick = { 
                                             selectedPaymentMethod = category
-                                            // ✅ SAFE FALLBACK: If empty, send "Default"
+                                            // ✅ Safe Fallback added here!
                                             selectedUPIApp = paymentOptions[category]?.firstOrNull() ?: "Default"
                                             showPaymentDropdown = false 
                                         }
@@ -340,6 +344,7 @@ fun MainScreen(
                             }
                         }
                         
+                        // Show Apps if UPI or Wallet selected
                         if (paymentOptions[selectedPaymentMethod]?.isNotEmpty() == true) {
                             Spacer(Modifier.height(8.dp))
                             Text("Select App", color = colors.hint, fontSize = 12.sp)
@@ -380,7 +385,7 @@ fun MainScreen(
         Button(
             onClick = {
                 scope.launch {
-                    // ✅ CRITICAL BUG FIX: Prevent Double Tap
+                    // ✅ 1. DOUBLE TAP GUARD: Prevents firing multiple times
                     if (isLoading) return@launch
                     
                     keyboardController?.hide()
@@ -408,15 +413,18 @@ fun MainScreen(
                             upiApp = selectedUPIApp
                         )
                         
-                        val intent = Intent(context, WorkflowEngine::class.java).apply {
-                            action = WorkflowEngine.ACTION_START 
+                        // ✅ 2. THE REAL CRASH FIX: Using Broadcast Receiver!
+                        // Service को startService से कॉल करने पर Android 14 ऐप को मार देता है।
+                        // इसलिए अब हम सिर्फ 'Signal' भेज रहे हैं।
+                        val intent = Intent(WorkflowEngine.ACTION_START).apply {
+                            setPackage(context.packageName) // Security optimization
                             putExtra(WorkflowEngine.EXTRA_TASK, task)
                         }
                         
-                        context.startService(intent)
+                        context.sendBroadcast(intent) // 🔥 SEND SIGNAL
                         
                         onServiceResult(true, null)
-                        Toast.makeText(context, "🎯 Sniper Armed!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "🎯 Sniper Armed & Signal Sent!", Toast.LENGTH_SHORT).show()
                         
                     } catch (e: Exception) {
                         errorMessage = "Error: ${e.message?.take(40)}"
@@ -450,10 +458,11 @@ fun MainScreen(
     }
 }
 
-// 🛡️ 3-LAYER ACCESSIBILITY CHECK
+// 🛡️ THE BRAHMAASTRA: 3-Layer Accessibility Check (यह 100% काम करेगा)
 private fun isAccessibilityServiceEnabled(context: Context, serviceClass: Class<*>): Boolean {
     var isEnabled = false
     try {
+        // 🔹 LAYER 1: Official Android Settings Splitter (Strict Match)
         val expectedComponentName = ComponentName(context, serviceClass)
         val enabledServicesSetting = Settings.Secure.getString(
             context.contentResolver,
@@ -471,6 +480,7 @@ private fun isAccessibilityServiceEnabled(context: Context, serviceClass: Class<
             }
         }
 
+        // 🔹 LAYER 2: Brute-Force String Match (अगर फोन ने नाम बिगाड़ दिया हो)
         if (!isEnabled) {
             if (enabledServicesSetting.contains(context.packageName) &&
                 enabledServicesSetting.contains(serviceClass.simpleName)) {
@@ -478,6 +488,7 @@ private fun isAccessibilityServiceEnabled(context: Context, serviceClass: Class<
             }
         }
 
+        // 🔹 LAYER 3: Android Accessibility Manager (सिस्टम को बाईपास करके डायरेक्ट पूछना)
         if (!isEnabled) {
             val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
             val enabledServices = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
