@@ -8,10 +8,12 @@ import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -20,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -29,10 +32,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 
-// ✅ यही वो लाइन है जो इंजन को सही फोल्डर में ढूंढ रही है!
 import com.aare.vmax.core.orchestrator.WorkflowEngine 
-
 import com.aare.vmax.core.model.PassengerData
 import com.aare.vmax.core.model.SniperTask
 import com.aare.vmax.ui.components.PassengerCard
@@ -50,10 +53,36 @@ fun MainScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     val colors = VMaxColors.current
     
+    // 🧠 Basic State
     var trainNo by remember { mutableStateOf("12506") }
     var selectedQuota by remember { mutableStateOf("Tatkal") }
     var passengerList by remember { 
         mutableStateOf(listOf(PassengerData(id = UUID.randomUUID().toString()))) 
+    }
+    
+    // ⚙️ Advanced Booking State (Merged)
+    var selectedClass by remember { mutableStateOf("3A") }
+    var selectedPaymentMethod by remember { mutableStateOf("UPI") }
+    var selectedUPIApp by remember { mutableStateOf("BHIM UPI") }
+    var showClassDropdown by remember { mutableStateOf(false) }
+    var showPaymentDropdown by remember { mutableStateOf(false) }
+
+    // 🗂️ Data Lists
+    val travelClasses = remember {
+        listOf(
+            "1A" to "First AC", "2A" to "Second AC", "3A" to "Third AC",
+            "3E" to "3rd AC Economy", "CC" to "AC Chair Car", 
+            "SL" to "Sleeper", "2S" to "Second Seater"
+        )
+    }
+    
+    val paymentOptions = remember {
+        mapOf(
+            "UPI" to listOf("BHIM UPI", "PhonePe", "Paytm", "CRED UPI"),
+            "e-Wallets" to listOf("IRCTC iMudra", "MobiKwik"),
+            "Netbanking" to emptyList(),
+            "Card" to emptyList()
+        )
     }
     
     val validPassengers by derivedStateOf { 
@@ -69,8 +98,18 @@ fun MainScreen(
     }
     val maxPassengers = if (selectedQuota == "General") 6 else 4
     
-    val isAccessibilityEnabled = remember(context) {
-        isAccessibilityServiceEnabled(context, WorkflowEngine::class.java)
+    // ✅ Smart Accessibility Check (Auto-Hides Warning)
+    var isAccessibilityEnabled by remember { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                isAccessibilityEnabled = isAccessibilityServiceEnabled(context, WorkflowEngine::class.java)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Column(
@@ -81,6 +120,7 @@ fun MainScreen(
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // 🚆 Train & Quota
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxWidth()
@@ -88,31 +128,17 @@ fun MainScreen(
             OutlinedTextField(
                 value = trainNo,
                 onValueChange = { 
-                    if (it.length <= 5 && it.matches(Regex("\\d*"))) {
-                        trainNo = it 
-                    }
+                    if (it.length <= 5 && it.matches(Regex("\\d*"))) trainNo = it 
                 },
                 label = { Text("Train No", color = colors.hint) },
                 placeholder = { Text("5 digits", color = colors.hint.copy(alpha = 0.6f)) },
                 isError = trainNo.isNotBlank() && !trainNo.matches(Regex("\\d{5}")),
-                supportingText = {
-                    if (trainNo.isNotBlank() && !trainNo.matches(Regex("\\d{5}"))) {
-                        Text("Enter valid 5-digit number", color = colors.error, fontSize = 10.sp)
-                    }
-                },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Number,
-                    imeAction = ImeAction.Next
-                ),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = colors.fieldBg,
-                    unfocusedContainerColor = colors.fieldBg,
-                    focusedBorderColor = colors.accent,
-                    unfocusedBorderColor = Color.Transparent,
-                    focusedTextColor = colors.onField,
-                    unfocusedTextColor = colors.onField,
-                    errorBorderColor = colors.error,
-                    errorTextColor = colors.error
+                    focusedContainerColor = colors.fieldBg, unfocusedContainerColor = colors.fieldBg,
+                    focusedBorderColor = colors.accent, unfocusedBorderColor = Color.Transparent,
+                    focusedTextColor = colors.onField, unfocusedTextColor = colors.onField,
+                    errorBorderColor = colors.error, errorTextColor = colors.error
                 ),
                 singleLine = true,
                 modifier = Modifier.weight(0.6f)
@@ -130,35 +156,27 @@ fun MainScreen(
                     label = { Text("Quota", color = colors.hint) },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showQuotaMenu) },
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = colors.fieldBg,
-                        unfocusedContainerColor = colors.fieldBg,
-                        focusedBorderColor = colors.accent,
-                        unfocusedBorderColor = Color.Transparent,
-                        focusedTextColor = colors.onField,
-                        unfocusedTextColor = colors.onField
+                        focusedContainerColor = colors.fieldBg, unfocusedContainerColor = colors.fieldBg,
+                        focusedBorderColor = colors.accent, unfocusedBorderColor = Color.Transparent,
+                        focusedTextColor = colors.onField, unfocusedTextColor = colors.onField
                     ),
                     modifier = Modifier.menuAnchor()
                 )
                 ExposedDropdownMenu(
-                    expanded = showQuotaMenu,
-                    onDismissRequest = { showQuotaMenu = false },
+                    expanded = showQuotaMenu, onDismissRequest = { showQuotaMenu = false },
                     modifier = Modifier.background(colors.cardBg)
                 ) {
                     quotaOptions.forEach { option ->
                         DropdownMenuItem(
-                            text = { 
-                                Text(option, color = if (option == selectedQuota) colors.accent else colors.onField) 
-                            },
-                            onClick = { 
-                                selectedQuota = option
-                                showQuotaMenu = false 
-                            }
+                            text = { Text(option, color = if (option == selectedQuota) colors.accent else colors.onField) },
+                            onClick = { selectedQuota = option; showQuotaMenu = false }
                         )
                     }
                 }
             }
         }
 
+        // ⚠️ Accessibility Warning
         if (!isAccessibilityEnabled) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = colors.warning.copy(alpha = 0.1f)),
@@ -166,7 +184,7 @@ fun MainScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-                    .padding(12.dp)
+                    .padding(vertical = 12.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -176,7 +194,6 @@ fun MainScreen(
                     Text("Enable VMAX in Accessibility Settings", color = colors.warning, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
         }
 
         Row(
@@ -188,6 +205,7 @@ fun MainScreen(
             Text("Max: $maxPassengers", color = colors.hint, fontSize = 12.sp)
         }
 
+        // 📜 Scrollable Passenger List & Booking Options
         val listState = rememberLazyListState()
         LazyColumn(
             state = listState,
@@ -228,6 +246,114 @@ fun MainScreen(
                     }
                 }
             }
+
+            // ⚙️ ADVANCED BOOKING OPTIONS (Merged UI)
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = colors.cardBg),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    border = BorderStroke(1.dp, colors.accent.copy(alpha = 0.3f))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("⚙️ Booking Options", color = colors.accent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Spacer(Modifier.height(12.dp))
+                        
+                        // Travel Class Selection
+                        Text("Travel Class", color = colors.hint, fontSize = 12.sp)
+                        ExposedDropdownMenuBox(
+                            expanded = showClassDropdown,
+                            onExpandedChange = { showClassDropdown = it }
+                        ) {
+                            OutlinedTextField(
+                                value = travelClasses.find { it.first == selectedClass }?.second ?: selectedClass,
+                                onValueChange = {}, readOnly = true,
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showClassDropdown) },
+                                modifier = Modifier.menuAnchor().fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = colors.fieldBg, unfocusedContainerColor = colors.fieldBg,
+                                    focusedBorderColor = colors.accent, unfocusedBorderColor = Color.Transparent,
+                                    focusedTextColor = colors.onField, unfocusedTextColor = colors.onField
+                                )
+                            )
+                            ExposedDropdownMenu(
+                                expanded = showClassDropdown, onDismissRequest = { showClassDropdown = false },
+                                modifier = Modifier.background(colors.fieldBg)
+                            ) {
+                                travelClasses.forEach { (code, name) ->
+                                    DropdownMenuItem(
+                                        text = { 
+                                            Row {
+                                                Text(code, fontWeight = FontWeight.Bold, color = colors.accent)                                                
+                                                Spacer(Modifier.width(8.dp))
+                                                Text(name, color = colors.onField)
+                                            }
+                                        },
+                                        onClick = { selectedClass = code; showClassDropdown = false }
+                                    )
+                                }
+                            }
+                        }
+                        
+                        Spacer(Modifier.height(12.dp))
+                        
+                        // Payment Method Selection
+                        Text("Payment Method", color = colors.hint, fontSize = 12.sp)
+                        ExposedDropdownMenuBox(
+                            expanded = showPaymentDropdown,
+                            onExpandedChange = { showPaymentDropdown = it }
+                        ) {
+                            OutlinedTextField(
+                                value = selectedPaymentMethod,
+                                onValueChange = {}, readOnly = true,
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showPaymentDropdown) },
+                                modifier = Modifier.menuAnchor().fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = colors.fieldBg, unfocusedContainerColor = colors.fieldBg,
+                                    focusedBorderColor = colors.accent, unfocusedBorderColor = Color.Transparent,
+                                    focusedTextColor = colors.onField, unfocusedTextColor = colors.onField
+                                )
+                            )
+                            ExposedDropdownMenu(
+                                expanded = showPaymentDropdown, onDismissRequest = { showPaymentDropdown = false },
+                                modifier = Modifier.background(colors.fieldBg)
+                            ) {
+                                paymentOptions.keys.forEach { category ->
+                                    DropdownMenuItem(
+                                        text = { Text(category, color = colors.onField) },
+                                        onClick = { selectedPaymentMethod = category; showPaymentDropdown = false }
+                                    )
+                                }                            
+                            }
+                        }
+                        
+                        // Show Apps if UPI or Wallet selected (With Horizontal Scroll)
+                        if (paymentOptions[selectedPaymentMethod]?.isNotEmpty() == true) {
+                            Spacer(Modifier.height(8.dp))
+                            Text("Select App", color = colors.hint, fontSize = 12.sp)
+                            Row(
+                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                paymentOptions[selectedPaymentMethod]?.forEach { app ->
+                                    FilterChip(
+                                        selected = selectedUPIApp == app,
+                                        onClick = { selectedUPIApp = app },
+                                        label = { Text(app, fontSize = 11.sp, color = if (selectedUPIApp == app) Color.White else colors.onField) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = colors.accent,
+                                            containerColor = colors.fieldBg
+                                        ),
+                                        border = FilterChipDefaults.filterChipBorder(
+                                            enabled = true, selected = selectedUPIApp == app,
+                                            borderColor = colors.accent
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         val hasErrors = passengerList.any { !it.isValid() && it.isFilled() }
@@ -237,6 +363,7 @@ fun MainScreen(
 
         val canArm = validPassengers.isNotEmpty() && trainNo.matches(Regex("\\d{5}")) && !isLoading && isAccessibilityEnabled
 
+        // 🔥 FIRE BUTTON
         Button(
             onClick = {
                 scope.launch {
@@ -255,12 +382,15 @@ fun MainScreen(
                     errorMessage = null
                     
                     try {
+                        // ✅ MERGED: अब सारी UI की सेटिंग्स SniperTask में पास हो रही हैं!
                         val task = SniperTask(
                             taskId = UUID.randomUUID().toString(),
                             trainNumber = trainNo.trim(),
-                            travelClass = "3A", 
+                            travelClass = selectedClass,  
                             quota = selectedQuota,                            
-                            passengers = validPassengers
+                            passengers = validPassengers,
+                            paymentMethod = selectedPaymentMethod,
+                            upiApp = selectedUPIApp
                         )
                         
                         val intent = Intent(context, WorkflowEngine::class.java).apply {
@@ -307,14 +437,11 @@ fun MainScreen(
 
 private fun isAccessibilityServiceEnabled(context: Context, serviceClass: Class<*>): Boolean {
     return try {
-        val enabled = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
-        val splitter = android.text.TextUtils.SimpleStringSplitter(':')
-        splitter.setString(enabled)
-        val expectedComponent = ComponentName(context, serviceClass).flattenToString()        
-        while (splitter.hasNext()) {
-            if (splitter.next().equals(expectedComponent, ignoreCase = true)) return true
-        }
-        false
+        val enabledServices = Settings.Secure.getString(
+            context.contentResolver, 
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: ""
+        enabledServices.contains(serviceClass.simpleName) 
     } catch (e: Exception) {
         false
     }
