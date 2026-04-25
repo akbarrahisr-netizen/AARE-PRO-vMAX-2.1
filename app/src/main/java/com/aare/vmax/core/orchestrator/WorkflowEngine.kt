@@ -284,7 +284,6 @@ class WorkflowEngine : AccessibilityService() {
                 }
 
                 if (isMatch && node.isClickable && node.isVisibleToUser) {
-                    // ✅ FIX: यहाँ ब्रैकेट अलग कर दिया गया है!
                     return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                 }
 
