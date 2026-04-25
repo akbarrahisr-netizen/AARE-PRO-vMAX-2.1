@@ -1,4 +1,4 @@
-package com.aare.vmax.core.orchestrator // ✅ पैकेज का नाम आपके फोल्डर के हिसाब से सही कर दिया है
+package com.aare.vmax.core.orchestrator
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
@@ -14,32 +14,38 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.*
 
-/**
- * 🎯 VMAX SNIPER — FINAL SYNTAX FIXED EDITION
- */
+object SafeRecycle {
+    fun recycle(node: AccessibilityNodeInfo?) {
+        try { node?.recycle() } catch (_: Exception) {}
+    }
+    fun recycleAll(nodes: Collection<AccessibilityNodeInfo>?) {
+        nodes?.forEach { recycle(it) }
+    }
+}
+
 class WorkflowEngine : AccessibilityService() {
-    
+
     companion object {
         private const val TAG = "VMAX_Workflow"
         const val ACTION_START = "com.aare.vmax.ACTION_START"
         const val EXTRA_TASK = "extra_task"
-        
+
         private const val RADAR_SCAN_MS = 50L
         private const val EARLY_FIRE_MS = 200L
         private const val FIELD_FILL_DELAY_MS = 10L
         private const val VISIBILITY_TIMEOUT_MS = 2000L
-        
+
         private const val DEBUG_LOGS = true
     }
-    
+
     private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val actionMutex = Mutex()
-    
+
     private var activeTask: SniperTask? = null
     private var isExecuting = false
     private val textActionBundle = Bundle()
     private val lowercaseCache = mutableMapOf<String, String>()
-    
+
     private object IRCTCIds {
         const val PASSENGER_NAME = "cris.org.in.prs.ima:id/et_passenger_name"
         const val PASSENGER_AGE = "cris.org.in.prs.ima:id/et_passenger_age"
@@ -54,12 +60,12 @@ class WorkflowEngine : AccessibilityService() {
             eventTypes = AccessibilityEvent.TYPES_ALL_MASK
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             notificationTimeout = 20
-            flags = AccessibilityServiceInfo.FLAG_REQUEST_TOUCH_EXPLORATION_MODE or 
+            flags = AccessibilityServiceInfo.FLAG_REQUEST_TOUCH_EXPLORATION_MODE or
                     AccessibilityServiceInfo.DEFAULT
         }
         if (DEBUG_LOGS) Log.d(TAG, "✅ WorkflowEngine connected")
     }
-    
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_START) {
             @Suppress("DEPRECATION")
@@ -87,13 +93,13 @@ class WorkflowEngine : AccessibilityService() {
 
     private fun schedulePreFireCheck() {
         val task = activeTask ?: return
-        
+
         engineScope.launch {
             val targetHour = when (task.quota) {
                 "General" -> 8
                 else -> if (task.travelClass in listOf("1A", "2A", "3A", "3E", "CC")) 10 else 11
             }
-            
+
             val calendar = Calendar.getInstance().apply {
                 set(Calendar.HOUR_OF_DAY, targetHour)
                 set(Calendar.MINUTE, 0)
@@ -103,18 +109,18 @@ class WorkflowEngine : AccessibilityService() {
                     add(Calendar.DAY_OF_YEAR, 1)
                 }
             }
-            
+
             val exactFireTimeMs = calendar.timeInMillis - EARLY_FIRE_MS
 
             if (System.currentTimeMillis() >= exactFireTimeMs) {
                 executeWorkflow()
                 return@launch
             }
-            
-            while (System.currentTimeMillis() < exactFireTimeMs && isActive) { 
-                delay(10) 
+
+            while (System.currentTimeMillis() < exactFireTimeMs && isActive) {
+                delay(10)
             }
-            
+
             if (isActive) executeWorkflow()
         }
     }
@@ -122,26 +128,26 @@ class WorkflowEngine : AccessibilityService() {
     private suspend fun executeWorkflow() = actionMutex.withLock {
         if (isExecuting) return@withLock
         isExecuting = true
-        
+
         val task = activeTask ?: run {
             isExecuting = false
             return@withLock
         }
-        
+
         try {
             findAndClickTrainClass(task.trainNumber, task.travelClass)
 
             var pageLoaded = false
             val timeoutMs = System.currentTimeMillis() + 5000L
-            
+
             while (System.currentTimeMillis() < timeoutMs && engineScope.isActive) {
                 val root = rootInActiveWindow
                 if (root != null) {
                     val nodes = root.findAccessibilityNodeInfosByViewId(IRCTCIds.PASSENGER_NAME)
-                    if (nodes.isNotEmpty()) { 
-                        pageLoaded = true 
+                    if (nodes.isNotEmpty()) {
+                        pageLoaded = true
                         SafeRecycle.recycle(root)
-                        break 
+                        break
                     }
                     SafeRecycle.recycle(root)
                 }
@@ -151,7 +157,7 @@ class WorkflowEngine : AccessibilityService() {
             if (!pageLoaded) return@withLock
 
             val activePassengers = task.passengers.filter { it.isFilled() }
-            
+
             for ((index, passenger) in activePassengers.withIndex()) {
                 if (fillPassengerData(passenger, index)) {
                     if (index < activePassengers.lastIndex) {
@@ -160,9 +166,9 @@ class WorkflowEngine : AccessibilityService() {
                     }
                 }
             }
-            
+
             triggerPaymentFlow()
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "❌ Execution error", e)
         } finally {
@@ -177,26 +183,25 @@ class WorkflowEngine : AccessibilityService() {
         return try {
             val names = root.findAccessibilityNodeInfosByViewId(IRCTCIds.PASSENGER_NAME)
             val ages = root.findAccessibilityNodeInfosByViewId(IRCTCIds.PASSENGER_AGE)
-            
+
             if (names.size > index && ages.size > index && names[index].isEditable && ages[index].isEditable) {
-                
+
                 textActionBundle.clear()
                 textActionBundle.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, passenger.name)
                 names[index].performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, textActionBundle)
-                
+
                 delay(FIELD_FILL_DELAY_MS)
-                
+
                 textActionBundle.clear()
                 textActionBundle.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, passenger.age)
                 ages[index].performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, textActionBundle)
-                
+
                 true
             } else {
-                // ✅ FIX: वो चिपकी हुई लाइन यहाँ फिक्स कर दी गई है!
-                false 
+                false
             }
-        } finally { 
-            SafeRecycle.recycle(root) 
+        } finally {
+            SafeRecycle.recycle(root)
         }
     }
 
@@ -205,9 +210,9 @@ class WorkflowEngine : AccessibilityService() {
         return try {
             val trainNodes = root.findAccessibilityNodeInfosByText(trainNo)
             if (trainNodes.isEmpty()) return false
-            
+
             for (i in 1 until trainNodes.size) SafeRecycle.recycle(trainNodes[i])
-            
+
             var card = trainNodes[0].parent
             var depth = 0
             while (card != null && depth < 5) {
@@ -266,22 +271,23 @@ class WorkflowEngine : AccessibilityService() {
         val root = rootInActiveWindow ?: return false
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
-        
+
         while (queue.isNotEmpty()) {
             val node = queue.removeFirst()
             try {
                 val nodeText = node.text?.toString() ?: ""
                 val lowerText = lowercaseCache.getOrPut(nodeText) { nodeText.lowercase() }
-                
+
                 val isMatch = terms.any { term ->
                     val lowerTerm = lowercaseCache.getOrPut(term) { term.lowercase() }
                     lowerText.contains(lowerTerm)
                 }
-                
+
                 if (isMatch && node.isClickable && node.isVisibleToUser) {
+                    // ✅ FIX: यहाँ ब्रैकेट अलग कर दिया गया है!
                     return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                 }
-                
+
                 repeat(node.childCount) { i ->
                     try { node.getChild(i)?.let { queue.add(it) } } catch (_: Exception) {}
                 }
@@ -290,14 +296,5 @@ class WorkflowEngine : AccessibilityService() {
             }
         }
         return false
-    }
-}
-
-object SafeRecycle {
-    fun recycle(node: AccessibilityNodeInfo?) {
-        try { node?.recycle() } catch (_: Exception) {}
-    }
-    fun recycleAll(nodes: Collection<AccessibilityNodeInfo>?) {
-        nodes?.forEach { recycle(it) }
     }
 }
