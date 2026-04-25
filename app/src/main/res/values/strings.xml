@@ -1,4 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">VMax Pro</string>
-    <string name="accessibility_service_description">VMax Pro Automation Service</string>
+    <string name="app_name">VMAX Pro</string>
+    
+    <string name="accessibility_service_description">
+        VMAX Pro uses Accessibility Service to help automate IRCTC booking tasks for testing purposes. 
+        It only interacts with the official IRCTC app and never collects or shares personal data. 
+        You can disable this anytime in Settings.
+    </string>
 </resources>
