@@ -35,7 +35,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 
-// ✅ NEW IMPORTS FOR BULLETPROOF ACCESSIBILITY CHECK
+// ✅ IMPORTS FOR 3-LAYER SECURITY CHECK
 import android.view.accessibility.AccessibilityManager
 import android.accessibilityservice.AccessibilityServiceInfo
 
@@ -449,27 +449,50 @@ fun MainScreen(
     }
 }
 
-// ✅ 100% BULLETPROOF ACCESSIBILITY CHECK (Uses Android System directly)
+// 🛡️ THE BRAHMAASTRA: 3-Layer Accessibility Check (यह 100% काम करेगा)
 private fun isAccessibilityServiceEnabled(context: Context, serviceClass: Class<*>): Boolean {
-    // 1. सबसे पक्का तरीका: Android के AccessibilityManager से डायरेक्ट पूछना
+    var isEnabled = false
     try {
-        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
-        val enabledServices = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
-        for (service in enabledServices) {
-            val serviceInfo = service.resolveInfo.serviceInfo
-            if (serviceInfo.packageName == context.packageName && serviceInfo.name == serviceClass.name) {
-                return true
+        // 🔹 LAYER 1: Official Android Settings Splitter (Strict Match)
+        val expectedComponentName = ComponentName(context, serviceClass)
+        val enabledServicesSetting = Settings.Secure.getString(
+            context.contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: ""
+        
+        val colonSplitter = android.text.TextUtils.SimpleStringSplitter(':')
+        colonSplitter.setString(enabledServicesSetting)
+        while (colonSplitter.hasNext()) {
+            val componentNameString = colonSplitter.next()
+            val enabledComponent = ComponentName.unflattenFromString(componentNameString)
+            if (enabledComponent != null && enabledComponent == expectedComponentName) {
+                isEnabled = true
+                break
+            }
+        }
+
+        // 🔹 LAYER 2: Brute-Force String Match (अगर फोन ने नाम बिगाड़ दिया हो)
+        if (!isEnabled) {
+            if (enabledServicesSetting.contains(context.packageName) &&
+                enabledServicesSetting.contains(serviceClass.simpleName)) {
+                isEnabled = true
+            }
+        }
+
+        // 🔹 LAYER 3: Android Accessibility Manager (सिस्टम को बाईपास करके डायरेक्ट पूछना)
+        if (!isEnabled) {
+            val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+            val enabledServices = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+            for (service in enabledServices) {
+                if (service.resolveInfo.serviceInfo.packageName == context.packageName &&
+                    service.resolveInfo.serviceInfo.name == serviceClass.name) {
+                    isEnabled = true
+                    break
+                }
             }
         }
     } catch (e: Exception) {
-        // Ignore and try fallback
+        e.printStackTrace()
     }
-
-    // 2. बैकअप तरीका (Fallback) - अगर ऊपर वाला किसी वजह से काम न करे
-    return try {
-        val settingsVal = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
-        settingsVal.contains(serviceClass.simpleName, ignoreCase = true)
-    } catch (e: Exception) {
-        false
-    }
+    return isEnabled
 }
