@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Settings
 import android.widget.Toast
-import androidx.compose.foundation.BorderStroke // ✅ FIX: BorderStroke का एरर अब नहीं आएगा
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -30,8 +30,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 
-// ✅ FIX: सही रास्ता (अगर WorkflowEngine 'orchestrator' फ़ोल्डर में है, तो 'engine' की जगह 'orchestrator' लिख दें)
-import com.aare.vmax.core.engine.WorkflowEngine 
+// ✅ यही वो लाइन है जो इंजन को सही फोल्डर में ढूंढ रही है!
+import com.aare.vmax.core.orchestrator.WorkflowEngine 
+
 import com.aare.vmax.core.model.PassengerData
 import com.aare.vmax.core.model.SniperTask
 import com.aare.vmax.ui.components.PassengerCard
@@ -141,7 +142,7 @@ fun MainScreen(
                 ExposedDropdownMenu(
                     expanded = showQuotaMenu,
                     onDismissRequest = { showQuotaMenu = false },
-                    modifier = Modifier.background(colors.cardBg) // ✅ FIX: dropdownBg को हटाकर cardBg किया
+                    modifier = Modifier.background(colors.cardBg)
                 ) {
                     quotaOptions.forEach { option ->
                         DropdownMenuItem(
@@ -318,4 +319,3 @@ private fun isAccessibilityServiceEnabled(context: Context, serviceClass: Class<
         false
     }
 }
-
