@@ -67,22 +67,32 @@ fun MainScreen(
     var showClassDropdown by remember { mutableStateOf(false) }
     var showPaymentDropdown by remember { mutableStateOf(false) }
 
-    // 🗂️ Data Lists
+    // 🗂️ ✅ 100% MERGED: All 13 Travel Classes added!
     val travelClasses = remember {
         listOf(
-            "1A" to "First AC", "2A" to "Second AC", "3A" to "Third AC",
-            "3E" to "3rd AC Economy", "CC" to "AC Chair Car", 
-            "SL" to "Sleeper", "2S" to "Second Seater"
+            "EA" to "First AC (EA)",
+            "1A" to "First AC (1A)",
+            "2A" to "Second AC (2A)",
+            "3A" to "Third AC (3A)",
+            "CC" to "AC Chair Car (CC)",
+            "3E" to "Third AC Economy (3E)",
+            "EC" to "Executive Chair Car (EC)",
+            "SL" to "Sleeper (SL)",
+            "FC" to "First Class (FC)",
+            "2S" to "Second Sitting (2S)",
+            "VS" to "Vistadome Sleeper (VS)",
+            "VC" to "Vistadome Chair Car (VC)",
+            "EV" to "Vistadome AC (EV)"
         )
     }
     
-    // ✅ 100% MERGED: नए पेमेंट ऑप्शंस (Google Pay, SBI, Cards वगैरह)
+    // ✅ Payment Options
     val paymentOptions = remember {
         mapOf(
             "UPI" to listOf("BHIM UPI", "PhonePe", "Paytm", "CRED UPI", "Google Pay"),
             "e-Wallets" to listOf("IRCTC Wallet", "MobiKwik", "Paytm Wallet", "FreeCharge"),
-            "Netbanking" to listOf("SBI", "HDFC", "ICICI", "Axis", "PNB", "BOB"), // मैचिंग के लिए Netbanking
-            "Card" to listOf("Credit Card", "Debit Card", "Cash Card") // मैचिंग के लिए Card
+            "Netbanking" to listOf("SBI", "HDFC", "ICICI", "Axis", "PNB", "BOB"), 
+            "Card" to listOf("Credit Card", "Debit Card", "Cash Card") 
         )
     }
     
@@ -248,7 +258,7 @@ fun MainScreen(
                 }
             }
 
-            // ⚙️ ADVANCED BOOKING OPTIONS (Merged UI)
+            // ⚙️ ADVANCED BOOKING OPTIONS
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = colors.cardBg),
@@ -259,7 +269,7 @@ fun MainScreen(
                         Text("⚙️ Booking Options", color = colors.accent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Spacer(Modifier.height(12.dp))
                         
-                        // Travel Class Selection
+                        // Travel Class Selection (With ALL 13 Classes)
                         Text("Travel Class", color = colors.hint, fontSize = 12.sp)
                         ExposedDropdownMenuBox(
                             expanded = showClassDropdown,
@@ -278,7 +288,7 @@ fun MainScreen(
                             )
                             ExposedDropdownMenu(
                                 expanded = showClassDropdown, onDismissRequest = { showClassDropdown = false },
-                                modifier = Modifier.background(colors.fieldBg)
+                                modifier = Modifier.background(colors.fieldBg).heightIn(max = 250.dp) // Added max height for scrolling long list
                             ) {
                                 travelClasses.forEach { (code, name) ->
                                     DropdownMenuItem(
