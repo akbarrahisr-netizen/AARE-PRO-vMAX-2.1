@@ -1,216 +1,282 @@
 package com.aare.vmax.ui
 
-import android.content.*
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
 import android.provider.Settings
 import android.widget.Toast
-import androidx.compose.foundation.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.*
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.*
-import androidx.compose.ui.unit.*
-import androidx.lifecycle.*
-import android.view.accessibility.AccessibilityManager
-import android.accessibilityservice.AccessibilityServiceInfo
-
-import com.aare.vmax.core.orchestrator.WorkflowEngine 
-import com.aare.vmax.core.model.*
-import com.aare.vmax.ui.components.PassengerCard
-import com.aare.vmax.ui.theme.VMaxColors
-import kotlinx.coroutines.launch
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.aare.vmax.core.model.PassengerData
+import com.aare.vmax.core.model.PaymentDetails
+import com.aare.vmax.core.model.SniperTask
+import com.aare.vmax.core.orchestrator.WorkflowEngine
 import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(onServiceResult: (Boolean, String?) -> Unit = { _, _ -> }) {
+fun MainScreen() {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val keyboard = LocalSoftwareKeyboardController.current
-    val colors = VMaxColors.current
     
-    val trainRegex = remember { Regex("\\d{5}") }
-    val digitRegex = remember { Regex("\\d*") }
-
-    // 🧠 Core State
-    var trainNo by remember { mutableStateOf("12506") }
-    var selectedQuota by remember { mutableStateOf("Tatkal") }
-    var passengerList by remember { mutableStateOf(listOf(PassengerData(id = UUID.randomUUID().toString()))) }
-    
-    // ⚙️ Advanced Booking Options (From your Screenshots)
+    // 🧠 State Management
+    var trainNo by remember { mutableStateOf("") }
     var travelClass by remember { mutableStateOf("3A") }
+    var selectedQuota by remember { mutableStateOf("Tatkal") }
+    var passengers by remember { mutableStateOf(listOf(PassengerData())) }
+    var payment by remember { mutableStateOf(PaymentDetails()) }
+    
+    // ⚙️ Advanced Settings
+    var bookingOption by remember { mutableStateOf("None") }
     var autoUpgradation by remember { mutableStateOf(false) }
     var confirmBerthsOnly by remember { mutableStateOf(false) }
-    var travelInsurance by remember { mutableStateOf(true) }
-    var bookingOption by remember { mutableStateOf("None") }
+    var insurance by remember { mutableStateOf(true) }
     var coachPreferred by remember { mutableStateOf(false) }
     var coachId by remember { mutableStateOf("") }
     var mobileNo by remember { mutableStateOf("") }
+    
+    // ✅ Service Status
+    var isEnabled by remember { mutableStateOf(isAccessibilityEnabled(context)) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
-    // 💳 Payment Suite
-    var paymentMethod by remember { mutableStateOf("UPI apps") }
-    var selectedApp by remember { mutableStateOf("PhonePe") }
-    var autofillOTP by remember { mutableStateOf(false) }
-
-    var isLoading by remember { mutableStateOf(false) }
-    var showQuotaMenu by remember { mutableStateOf(false) }
-
-    // 🗂️ Data Lists
-    val quotaOptions = listOf("General", "Tatkal", "Premium Tatkal", "Ladies", "Lower Berth")
-    val classes = remember { listOf("EA", "1A", "2A", "3A", "CC", "3E", "EC", "SL", "FC", "2S", "VS", "VC", "EV") }
-    val payMethods = listOf("e-Wallets", "Netbanking/Cards", "UPI ID", "UPI apps")
-    val upiApps = mapOf("UPI apps" to listOf("PhonePe", "Paytm", "CRED UPI", "BHIM UPI", "Google Pay"), "e-Wallets" to listOf("IRCTC", "MobiKwik", "Paytm Wallet"))
-
-    // ✅ Robust Accessibility Check
-    var isAccessibilityEnabled by remember { mutableStateOf(isAccessibilityServiceEnabled(context, WorkflowEngine::class.java)) }
-    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) isAccessibilityEnabled = isAccessibilityServiceEnabled(context, WorkflowEngine::class.java)
+            if (event == Lifecycle.Event.ON_RESUME) {
+                isEnabled = isAccessibilityEnabled(context)
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(colors.background).padding(16.dp)) {
-        
-        // 🚆 TRAIN + QUOTA
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedTextField(
-                value = trainNo, onValueChange = { if (it.length <= 5 && it.matches(digitRegex)) trainNo = it },
-                label = { Text("Train No") }, modifier = Modifier.weight(0.6f),
-                isError = trainNo.isNotBlank() && !trainRegex.matches(trainNo)
-            )
-            ExposedDropdownMenuBox(expanded = showQuotaMenu, onExpandedChange = { showQuotaMenu = it }, modifier = Modifier.weight(0.4f)) {
-                OutlinedTextField(value = selectedQuota, onValueChange = {}, readOnly = true, label = { Text("Quota") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(showQuotaMenu) }, modifier = Modifier.menuAnchor())
-                ExposedDropdownMenu(expanded = showQuotaMenu, onDismissRequest = { showQuotaMenu = false }) {
-                    quotaOptions.forEach { DropdownMenuItem(text = { Text(it) }, onClick = { selectedQuota = it; showQuotaMenu = false }) }
+    Column(
+        modifier = Modifier.fillMaxSize().background(Color(0xFF101018)).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // ⚠️ Service Status Header
+        StatusHeader(isEnabled) {
+            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            // 🚆 SECTION: Journey Details
+            item {
+                VMaxCard(title = "🚆 Journey Details") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        VMaxTextField(trainNo, "Train No", Modifier.weight(1f), true) { trainNo = it }
+                        VMaxDropdown(travelClass, "Class", listOf("Sleeper", "3A", "2A", "1A", "CC", "EC"), Modifier.weight(1f)) { travelClass = it }
+                    }
+                    VMaxDropdown(selectedQuota, "Quota", listOf("Tatkal", "General", "Ladies", "Senior Citizen"), Modifier.fillMaxWidth()) { selectedQuota = it }
                 }
             }
-        }
-
-        // ⚠️ ACCESSIBILITY WARNING CARD
-        if (!isAccessibilityEnabled) {
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp).clickable { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
-                border = BorderStroke(1.dp, Color(0xFFFFA500)),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFA500).copy(alpha = 0.1f))
-            ) {
-                Text("⚠️ VMAX Service is OFF (Tap to fix & refresh)", modifier = Modifier.padding(12.dp), color = Color(0xFFFFA500), fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            }
-        }
-
-        val listState = rememberLazyListState()
-        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
             
-            // 👥 PASSENGERS
-            item { Text("👥 Passengers (${passengerList.count { it.isFilled() }} valid)", color = colors.accent, modifier = Modifier.padding(vertical = 8.dp)) }
-            itemsIndexed(passengerList, key = { _, it -> it.id }) { index, p ->
-                PassengerCard(passenger = p, passengerIndex = index, onUpdate = { u -> passengerList = passengerList.toMutableList().apply { this[index] = u } }, onRemove = { if (passengerList.size > 1) passengerList = passengerList.filter { it.id != p.id } })
+            // 👥 SECTION: Passengers
+            itemsIndexed(passengers) { index, passenger ->
+                PassengerCard(
+                    index = index,
+                    passenger = passenger,
+                    canRemove = passengers.size > 1,
+                    onUpdate = { updated -> passengers = passengers.toMutableList().apply { this[index] = updated } },
+                    onRemove = { passengers = passengers.toMutableList().apply { removeAt(index) } }
+                )
             }
             
             item {
-                TextButton(onClick = { passengerList = passengerList + PassengerData(id = UUID.randomUUID().toString()); scope.launch { listState.animateScrollToItem(passengerList.lastIndex) } }) { Text("+ Add Passenger") }
-                
-                // ⚙️ ADVANCED OPTIONS (From your Screen 524981)
-                Card(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), border = BorderStroke(1.dp, colors.accent.copy(alpha = 0.2f))) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text("⚙️ Booking Options", fontWeight = FontWeight.Bold, color = colors.accent)
-                        
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = autoUpgradation, onCheckedChange = { autoUpgradation = it })
-                            Text("Consider Auto upgradation", fontSize = 12.sp)
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = confirmBerthsOnly, onCheckedChange = { confirmBerthsOnly = it })
-                            Text("Book only if confirm berths are allotted", fontSize = 12.sp)
-                        }
-                        
-                        Text("Travel Insurance", modifier = Modifier.padding(top = 8.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Row {
-                            RadioButton(selected = travelInsurance, onClick = { travelInsurance = true })
-                            Text("Yes", modifier = Modifier.align(Alignment.CenterVertically))
-                            Spacer(Modifier.width(10.dp))
-                            RadioButton(selected = !travelInsurance, onClick = { travelInsurance = false })
-                            Text("No", modifier = Modifier.align(Alignment.CenterVertically))
-                        }
-                        
-                        // Class Selection (All 13)
-                        var showClasses by remember { mutableStateOf(false) }
-                        Box(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                            OutlinedTextField(value = travelClass, onValueChange = {}, readOnly = true, label = { Text("Travel Class") }, modifier = Modifier.fillMaxWidth().clickable { showClasses = true }, enabled = false, colors = OutlinedTextFieldDefaults.colors(disabledTextColor = colors.onField, disabledBorderColor = colors.accent, disabledLabelColor = colors.hint))
-                            DropdownMenu(expanded = showClasses, onDismissRequest = { showClasses = false }, modifier = Modifier.heightIn(max = 300.dp)) {
-                                classes.forEach { c -> DropdownMenuItem(text = { Text(c) }, onClick = { travelClass = c; showClasses = false }) }
-                            }
-                        }
+                Button(
+                    onClick = { passengers = passengers + PassengerData() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6B21A8))
+                ) { Text("+ Add Passenger") }
+            }
+            
+            // ⚙️ SECTION: Advanced Settings
+            item {
+                VMaxCard(title = "⚙️ Advanced Settings") {
+                    VMaxDropdown(bookingOption, "Booking Option", listOf("None", "Same Coach", "1 Lower", "2 Lower"), Modifier.fillMaxWidth()) { bookingOption = it }
+                    
+                    Row {
+                        VMaxCheckbox("Auto Upgrade", autoUpgradation) { autoUpgradation = it }
+                        VMaxCheckbox("Confirm Berths", confirmBerthsOnly) { confirmBerthsOnly = it }
+                    }
 
-                        // Payment Logic (Scrollable Apps)
-                        Text("Payment Method", modifier = Modifier.padding(top = 12.dp), fontSize = 12.sp, color = colors.hint)
-                        payMethods.forEach { m ->
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(selected = paymentMethod == m, onClick = { paymentMethod = m; selectedApp = upiApps[m]?.firstOrNull() ?: "Default" })
-                                Text(m, fontSize = 12.sp)
-                            }
-                        }
-                        
-                        if (upiApps[paymentMethod] != null) {
-                            Row(modifier = Modifier.horizontalScroll(rememberScrollState()).padding(top = 8.dp)) {
-                                upiApps[paymentMethod]!!.forEach { app ->
-                                    FilterChip(selected = selectedApp == app, onClick = { selectedApp = app }, label = { Text(app) }, modifier = Modifier.padding(end = 4.dp))
-                                }
-                            }
-                        }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Insurance: ", color = Color.White, fontSize = 14.sp)
+                        FilterChip(selected = insurance, onClick = { insurance = true }, label = { Text("Yes") })
+                        Spacer(Modifier.width(8.dp))
+                        FilterChip(selected = !insurance, onClick = { insurance = false }, label = { Text("No") })
+                    }
+
+                    VMaxCheckbox("Coach Preferred", coachPreferred) { coachPreferred = it }
+                    AnimatedVisibility(visible = coachPreferred) {
+                        VMaxTextField(coachId, "Coach ID (e.g. S1, B1)", Modifier.fillMaxWidth()) { coachId = it.uppercase() }
                     }
                 }
-                Spacer(Modifier.height(100.dp))
+            }
+            
+            // 💳 SECTION: Payment Details
+            item {
+                VMaxCard(title = "💳 Payment Method") {
+                    VMaxDropdown(payment.paymentCategory, "Category", listOf("e-Wallets", "UPI ID", "UPI apps"), Modifier.fillMaxWidth()) {
+                        payment = payment.copy(paymentCategory = it)
+                    }
+                    
+                    AnimatedVisibility(visible = payment.paymentCategory == "UPI apps") {
+                        VMaxDropdown(payment.paymentMethod, "Select App", listOf("PhonePe", "Paytm", "CRED UPI"), Modifier.fillMaxWidth()) {
+                            payment = payment.copy(paymentMethod = it)
+                        }
+                    }
+
+                    AnimatedVisibility(visible = payment.paymentCategory == "UPI ID") {
+                        VMaxTextField(payment.upiId, "Enter UPI ID", Modifier.fillMaxWidth()) { payment = payment.copy(upiId = it) }
+                    }
+
+                    Row {
+                        VMaxCheckbox("Manual Pay", payment.manualPayment) { payment = payment.copy(manualPayment = it) }
+                        VMaxCheckbox("Autofill OTP", payment.autofillOTP) { payment = payment.copy(autofillOTP = it) }
+                    }
+                }
             }
         }
-
-        // 🔥 FIRE BUTTON
+        
+        // 🔥 ARM BUTTON
         Button(
             onClick = {
-                scope.launch {
-                    if (isLoading) return@launch
-                    keyboard?.hide()
-                    isLoading = true
-                    try {
-                        val task = SniperTask(
-                            taskId = UUID.randomUUID().toString(), trainNumber = trainNo, travelClass = travelClass, quota = selectedQuota, passengers = passengerList.filter { it.isFilled() },
-                            paymentMethod = paymentMethod, upiApp = selectedApp, autoUpgradation = autoUpgradation, confirmBerthsOnly = confirmBerthsOnly, insurance = travelInsurance
-                        )
-                        // ✅ SIGNAL TRIGGER (Broadcast) - Avoids Service Start Crashes
-                        context.sendBroadcast(Intent("com.aare.vmax.ACTION_START").apply { setPackage(context.packageName); putExtra("extra_task", task) })
-                        Toast.makeText(context, "🎯 Sniper Armed!", Toast.LENGTH_SHORT).show()
-                    } catch (e: Exception) { Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show() }
-                    finally { isLoading = false }
+                val task = SniperTask(
+                    taskId = UUID.randomUUID().toString(),
+                    trainNumber = trainNo, travelClass = travelClass, quota = selectedQuota,
+                    passengers = passengers.filter { it.isFilled() }, payment = payment,
+                    autoUpgradation = autoUpgradation, confirmBerthsOnly = confirmBerthsOnly,
+                    insurance = insurance, coachPreferred = coachPreferred, coachId = coachId
+                )
+                
+                val intent = Intent(context, WorkflowEngine::class.java).apply {
+                    action = WorkflowEngine.ACTION_START
+                    putExtra(WorkflowEngine.EXTRA_TASK, task)
                 }
+                ContextCompat.startForegroundService(context, intent)
+                Toast.makeText(context, "🎯 Sniper Armed & Ready!", Toast.LENGTH_SHORT).show()
             },
-            enabled = passengerList.any { it.isFilled() } && isAccessibilityEnabled && !isLoading,
-            modifier = Modifier.fillMaxWidth().height(60.dp).padding(bottom = 8.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B0000)),
-            shape = RoundedCornerShape(12.dp)
+            enabled = isEnabled && trainNo.length == 5,
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
         ) {
-            if (isLoading) CircularProgressIndicator(color = Color.White) else Text("🔥 ARM THE SNIPER", color = Color.White, fontWeight = FontWeight.Bold)
+            Text("🔥 ARM THE SNIPER", fontWeight = FontWeight.Bold, fontSize = 18.sp)
         }
     }
 }
 
-private fun isAccessibilityServiceEnabled(context: Context, serviceClass: Class<*>): Boolean {
-    try {
-        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
-        val enabledServices = am?.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
-        if (enabledServices != null) {
-            for (service in enabledServices) {
-                val serviceInfo = service.resolveInfo.serviceInfo
-                if (serviceInfo.packageName == context.packageName && (serviceInfo.name == serviceClass.name || serviceInfo.name.endsWith(serviceClass.simpleName))) return true
+// --- 🛠️ REUSABLE UI COMPONENTS (The Upgrade) ---
+
+@Composable
+fun StatusHeader(isEnabled: Boolean, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable { onClick() },
+        color = if (isEnabled) Color(0xFF1B5E20) else Color(0xFFB71C1C),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Text(
+            if (isEnabled) "🟢 VMAX Service Active" else "🔴 Service OFF (Tap to fix)",
+            color = Color.White, modifier = Modifier.padding(12.dp), fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+fun VMaxCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E2A)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, color = Color.White, fontWeight = FontWeight.Bold)
+            content()
+        }
+    }
+}
+
+@Composable
+fun VMaxTextField(value: String, label: String, modifier: Modifier, isNum: Boolean = false, onValueChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value, onValueChange = onValueChange,
+        label = { Text(label, color = Color.Gray) },
+        modifier = modifier,
+        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White),
+        keyboardOptions = KeyboardOptions(keyboardType = if (isNum) KeyboardType.Number else KeyboardType.Text)
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun VMaxDropdown(value: String, label: String, options: List<String>, modifier: Modifier, onSelect: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }, modifier = modifier) {
+        OutlinedTextField(
+            value = value, onValueChange = {}, readOnly = true,
+            label = { Text(label, color = Color.Gray) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            modifier = Modifier.menuAnchor(),
+            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { opt ->
+                DropdownMenuItem(text = { Text(opt) }, onClick = { onSelect(opt); expanded = false })
             }
         }
-    } catch (e: Exception) { }
-    return false
+    }
+}
+
+@Composable
+fun VMaxCheckbox(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        Text(label, color = Color.White, fontSize = 12.sp)
+    }
+}
+
+@Composable
+fun PassengerCard(index: Int, passenger: PassengerData, canRemove: Boolean, onUpdate: (PassengerData) -> Unit, onRemove: () -> Unit) {
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF2A2A35))) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("👤 Passenger ${index + 1}", color = Color.White, fontSize = 12.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                VMaxTextField(passenger.name, "Name", Modifier.weight(1f)) { onUpdate(passenger.copy(name = it)) }
+                VMaxTextField(passenger.age, "Age", Modifier.weight(0.4f), true) { onUpdate(passenger.copy(age = it)) }
+            }
+            Row {
+                VMaxTextField(passenger.nationality, "Nationality", Modifier.weight(1f)) { onUpdate(passenger.copy(nationality = it)) }
+                VMaxDropdown(passenger.gender, "Gender", listOf("Male", "Female", "Trans"), Modifier.weight(1f)) { onUpdate(passenger.copy(gender = it)) }
+            }
+            if (canRemove) {
+                Text("Remove", color = Color.Red, modifier = Modifier.clickable { onRemove() })
+            }
+        }
+    }
+}
+
+private fun isAccessibilityEnabled(context: Context): Boolean {
+    val expected = ComponentName(context, WorkflowEngine::class.java).flattenToString()
+    val enabled = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+    return enabled.contains(expected)
 }
