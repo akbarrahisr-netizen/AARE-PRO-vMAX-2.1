@@ -31,11 +31,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 
-// ✅ IMPORTS FOR 3-LAYER SECURITY CHECK
 import android.view.accessibility.AccessibilityManager
 import android.accessibilityservice.AccessibilityServiceInfo
 
@@ -195,7 +193,9 @@ fun MainScreen(
                     .clickable { 
                         isAccessibilityEnabled = isAccessibilityServiceEnabled(context, WorkflowEngine::class.java)
                         if (!isAccessibilityEnabled) {
-                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) 
+                            try {
+                                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) 
+                            } catch (e: Exception) { }
                         }
                     }
                     .padding(vertical = 12.dp)
@@ -269,7 +269,7 @@ fun MainScreen(
                         Text("⚙️ Booking Options", color = colors.accent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Spacer(Modifier.height(12.dp))
                         
-                        // Travel Class Selection
+                        // Travel Class Selection (With ALL 13 Classes)
                         Text("Travel Class", color = colors.hint, fontSize = 12.sp)
                         ExposedDropdownMenuBox(
                             expanded = showClassDropdown,
@@ -412,7 +412,9 @@ fun MainScreen(
                             putExtra(WorkflowEngine.EXTRA_TASK, task)
                         }
                         
-                        ContextCompat.startForegroundService(context, intent)
+                        // 🛑 CRASH FIX: Android 14 सिक्योरिटी की वजह से इसे बदला गया है।
+                        // Accessibility Service को Foreground Service की तरह स्टार्ट करने से ऐप क्रैश हो जाता है।
+                        context.startService(intent) 
                         
                         onServiceResult(true, null)
                         Toast.makeText(context, "🎯 Sniper Armed!", Toast.LENGTH_SHORT).show()
@@ -449,50 +451,33 @@ fun MainScreen(
     }
 }
 
-// 🛡️ THE BRAHMAASTRA: 3-Layer Accessibility Check (यह 100% काम करेगा)
+// 🛡️ CRASH-PROOF ACCESSIBILITY CHECK
 private fun isAccessibilityServiceEnabled(context: Context, serviceClass: Class<*>): Boolean {
     var isEnabled = false
     try {
-        // 🔹 LAYER 1: Official Android Settings Splitter (Strict Match)
-        val expectedComponentName = ComponentName(context, serviceClass)
-        val enabledServicesSetting = Settings.Secure.getString(
-            context.contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: ""
-        
-        val colonSplitter = android.text.TextUtils.SimpleStringSplitter(':')
-        colonSplitter.setString(enabledServicesSetting)
-        while (colonSplitter.hasNext()) {
-            val componentNameString = colonSplitter.next()
-            val enabledComponent = ComponentName.unflattenFromString(componentNameString)
-            if (enabledComponent != null && enabledComponent == expectedComponentName) {
-                isEnabled = true
-                break
-            }
-        }
-
-        // 🔹 LAYER 2: Brute-Force String Match (अगर फोन ने नाम बिगाड़ दिया हो)
-        if (!isEnabled) {
-            if (enabledServicesSetting.contains(context.packageName) &&
-                enabledServicesSetting.contains(serviceClass.simpleName)) {
-                isEnabled = true
-            }
-        }
-
-        // 🔹 LAYER 3: Android Accessibility Manager (सिस्टम को बाईपास करके डायरेक्ट पूछना)
-        if (!isEnabled) {
-            val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
-            val enabledServices = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+        // 🔹 LAYER 1: Android Accessibility Manager (सबसे सेफ तरीका)
+        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+        val enabledServices = am?.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+        if (enabledServices != null) {
             for (service in enabledServices) {
-                if (service.resolveInfo.serviceInfo.packageName == context.packageName &&
-                    service.resolveInfo.serviceInfo.name == serviceClass.name) {
+                if (service.resolveInfo?.serviceInfo?.name == serviceClass.name) {
                     isEnabled = true
                     break
                 }
             }
         }
-    } catch (e: Exception) {
-        e.printStackTrace()
+    } catch (e: Exception) { }
+
+    // 🔹 LAYER 2: Text Search Fallback (अगर पहला फेल हो जाए)
+    if (!isEnabled) {
+        try {
+            val settingsVal = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+            if (settingsVal.contains(serviceClass.name, ignoreCase = true) || 
+                settingsVal.contains(serviceClass.simpleName, ignoreCase = true)) {
+                isEnabled = true
+            }
+        } catch (e: Exception) { }
     }
+    
     return isEnabled
 }
