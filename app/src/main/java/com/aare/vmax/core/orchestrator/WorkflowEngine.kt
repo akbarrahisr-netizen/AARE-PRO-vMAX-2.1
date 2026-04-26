@@ -29,7 +29,6 @@ class WorkflowEngine : AccessibilityService() {
         object IRCTC {
             const val PKG = "cris.org.in.prs.ima"
             
-            // ✅ सभी View IDs सही हैं
             const val NAME_INPUT = "$PKG:id/et_passenger_name"
             const val AGE_INPUT = "$PKG:id/et_passenger_age"
             const val GENDER_SPINNER = "$PKG:id/et_gender"
@@ -65,7 +64,6 @@ class WorkflowEngine : AccessibilityService() {
     private var isArmed = false 
     private var currentPassengerIndex = 0
 
-    // ✅ Service Connected – सब ठीक है
     override fun onServiceConnected() {
         super.onServiceConnected()
         serviceInfo = AccessibilityServiceInfo().apply {
@@ -80,7 +78,6 @@ class WorkflowEngine : AccessibilityService() {
         Log.d(TAG, "✅ VMAX Sniper 77 - Online")
     }
 
-    // ✅ onStartCommand – सब ठीक है
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_START_SNIPER) {
             activeTask = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -100,7 +97,6 @@ class WorkflowEngine : AccessibilityService() {
         return START_STICKY
     }
 
-    // ✅ Time Sniper – सब ठीक है
     private suspend fun executeWithPrecision(task: SniperTask) {
         if (!TimeSyncManager.isSynced()) {
             TimeSyncManager.syncWithNetwork()
@@ -133,7 +129,6 @@ class WorkflowEngine : AccessibilityService() {
         updateNotification("🔥 ARMED & ACTIVE! Filling Forms...")
     }
 
-    // ✅ Main Automation Engine – सब ठीक है
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!isArmed) return
         val root = rootInActiveWindow ?: return
@@ -141,49 +136,42 @@ class WorkflowEngine : AccessibilityService() {
         try {
             if (root.packageName == IRCTC.PKG) {
                 
-                // Priority 1: Passenger Form
                 val nameFields = root.findAccessibilityNodeInfosByViewId(IRCTC.NAME_INPUT)
                 if (nameFields.isNotEmpty()) {
                     fillPassengerDetails(root)
                     return
                 }
                 
-                // Priority 2: Child Form
                 val childNameFields = root.findAccessibilityNodeInfosByViewId(IRCTC.CHILD_NAME)
                 if (childNameFields.isNotEmpty() && activeTask?.children?.isNotEmpty() == true) {
                     fillChildDetails(root)
                     return
                 }
                 
-                // Priority 3: Booking Options
                 val autoUpgradeCheck = root.findAccessibilityNodeInfosByViewId(IRCTC.AUTO_UPGRADE_CHECK)
                 if (autoUpgradeCheck.isNotEmpty()) {
                     setBookingOptions(root)
                     return
                 }
                 
-                // Priority 4: Coach & Mobile
                 val coachInput = root.findAccessibilityNodeInfosByViewId(IRCTC.COACH_PREF_INPUT)
                 if (coachInput.isNotEmpty()) {
                     setCoachAndMobile(root)
                     return
                 }
                 
-                // Priority 5: Payment Selection
                 val paymentCards = root.findAccessibilityNodeInfosByViewId(IRCTC.PAYMENT_CARDS)
                 if (paymentCards.isNotEmpty()) {
                     selectPaymentMethod(root)
                     return
                 }
                 
-                // Priority 6: Captcha
                 val captchaInput = root.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_INPUT)
                 if (captchaInput.isNotEmpty() && activeTask?.captchaAutofill == true) {
                     handleCaptcha(root)
                     return
                 }
                 
-                // Priority 7: Book Now Button
                 val bookBtn = root.findAccessibilityNodeInfosByViewId(IRCTC.BOOK_NOW_BTN)
                 if (bookBtn.isNotEmpty()) {
                     clickNode(bookBtn[0])
@@ -199,7 +187,6 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // ✅ Passenger Details – सब ठीक है
     private fun fillPassengerDetails(root: AccessibilityNodeInfo) {
         val task = activeTask ?: return
         val nameFields = root.findAccessibilityNodeInfosByViewId(IRCTC.NAME_INPUT)
@@ -234,7 +221,6 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // ✅ Child Details – सब ठीक है
     private fun fillChildDetails(root: AccessibilityNodeInfo) {
         val task = activeTask ?: return
         val childNameFields = root.findAccessibilityNodeInfosByViewId(IRCTC.CHILD_NAME)
@@ -259,7 +245,6 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // ✅ Booking Options – सब ठीक है
     private fun setBookingOptions(root: AccessibilityNodeInfo) {
         val task = activeTask ?: return
         
@@ -285,13 +270,13 @@ class WorkflowEngine : AccessibilityService() {
         Thread.sleep(50)
         
         val bookingOptSpinner = root.findAccessibilityNodeInfosByViewId(IRCTC.BOOKING_OPT_SPINNER)
-        if (bookingOptSpinner.isNotEmpty() && task.bookingOption.value > 0) {
-            selectSpinnerValue(bookingOptSpinner[0], task.bookingOption.display, root)
+        // ✅ यहाँ बग फिक्स किया गया है (String Check)
+        if (bookingOptSpinner.isNotEmpty() && task.bookingOption != "None" && task.bookingOption.isNotBlank()) {
+            selectSpinnerValue(bookingOptSpinner[0], task.bookingOption, root)
             Thread.sleep(50)
         }
     }
 
-    // ✅ Coach & Mobile – सब ठीक है
     private fun setCoachAndMobile(root: AccessibilityNodeInfo) {
         val task = activeTask ?: return
         
@@ -312,11 +297,11 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // ✅ Payment Selection – सब ठीक है
     private fun selectPaymentMethod(root: AccessibilityNodeInfo) {
         val task = activeTask ?: return
         
-        when (task.paymentCategory) {
+        // ✅ यहाँ Payment वाला बग फिक्स किया गया है
+        when (task.payment.category) {
             PaymentCategory.CARDS_NETBANKING -> {
                 val cardsRadio = root.findAccessibilityNodeInfosByViewId(IRCTC.PAYMENT_CARDS)
                 if (cardsRadio.isNotEmpty()) clickNode(cardsRadio[0])
@@ -329,29 +314,29 @@ class WorkflowEngine : AccessibilityService() {
                 val walletRadio = root.findAccessibilityNodeInfosByViewId(IRCTC.PAYMENT_EWALLET)
                 if (walletRadio.isNotEmpty()) clickNode(walletRadio[0])
                 Thread.sleep(100)
-                val walletSpinner = root.findAccessibilityNodeInfosByText(task.walletType.display)
+                val walletSpinner = root.findAccessibilityNodeInfosByText(task.payment.walletType)
                 if (walletSpinner.isNotEmpty()) clickNode(walletSpinner[0])
             }
             PaymentCategory.UPI_ID -> {
                 val upiIdRadio = root.findAccessibilityNodeInfosByViewId(IRCTC.PAYMENT_UPI_ID)
                 if (upiIdRadio.isNotEmpty()) clickNode(upiIdRadio[0])
                 Thread.sleep(100)
-                if (task.upiId.isNotBlank()) {
+                if (task.payment.upiId.isNotBlank()) {
                     val upiIdInput = root.findAccessibilityNodeInfosByViewId(IRCTC.UPI_ID_INPUT)
-                    if (upiIdInput.isNotEmpty()) setTextToNode(upiIdInput[0], task.upiId)
+                    if (upiIdInput.isNotEmpty()) setTextToNode(upiIdInput[0], task.payment.upiId)
                 }
             }
             PaymentCategory.UPI_APPS -> {
                 val upiAppsRadio = root.findAccessibilityNodeInfosByViewId(IRCTC.PAYMENT_UPI_APPS)
                 if (upiAppsRadio.isNotEmpty()) clickNode(upiAppsRadio[0])
                 Thread.sleep(100)
-                val upiAppSpinner = root.findAccessibilityNodeInfosByText(task.upiApp.display)
+                val upiAppSpinner = root.findAccessibilityNodeInfosByText(task.payment.upiApp)
                 if (upiAppSpinner.isNotEmpty()) clickNode(upiAppSpinner[0])
             }
         }
         Thread.sleep(100)
         
-        if (task.manualPayment) {
+        if (task.payment.manualPayment) {
             val manualCheckbox = root.findAccessibilityNodeInfosByText("I will fill payment information manually")
             if (manualCheckbox.isNotEmpty() && !manualCheckbox[0].isChecked) {
                 clickNode(manualCheckbox[0])
@@ -363,14 +348,12 @@ class WorkflowEngine : AccessibilityService() {
         if (proceedBtn.isNotEmpty()) clickNode(proceedBtn[0])
     }
 
-    // ✅ Captcha Handler – placeholder (बाद में OCR जोड़ेंगे)
     private fun handleCaptcha(root: AccessibilityNodeInfo) {
         updateNotification("🔐 Captcha Detected - Manual Entry Required")
         Log.d(TAG, "Captcha Phase Triggered")
-        // TODO: OCR API integration for auto captcha solving
+        // TODO: ML Kit Captcha integration 
     }
 
-    // ✅ Helper Functions – सब ठीक है
     private fun setTextToNode(node: AccessibilityNodeInfo, text: String) {
         val args = Bundle()
         args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
