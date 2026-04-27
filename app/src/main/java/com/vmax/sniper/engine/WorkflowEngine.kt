@@ -12,10 +12,6 @@ import android.view.accessibility.AccessibilityNodeInfo
 import kotlinx.coroutines.*
 import kotlin.random.Random
 
-/**
- * 🦅 VMAX SNIPER HYBRID FINAL
- * उस्ताद Md Akbar की जीरो-डिले विधि के लिए पूरी तरह तैयार।
- */
 class WorkflowEngine : AccessibilityService() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
@@ -36,7 +32,6 @@ class WorkflowEngine : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!isSniperActive || isProcessing) return
-        
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
 
         val rootNode = rootInActiveWindow ?: return
@@ -70,8 +65,8 @@ class WorkflowEngine : AccessibilityService() {
         var currentRoot = rootInActiveWindow ?: return
         
         for ((index, name) in names.withIndex()) {
-            // 🛡️ रैंडम स्क्रॉल - (Corrected Reference)
             if (Random.nextInt(100) < 30) {
+                // ✅ यहाँ सुधारा गया है: AccessibilityService. जोड़ा गया
                 performGlobalAction(AccessibilityService.GLOBAL_ACTION_SCROLL_FORWARD)
                 delay(Random.nextLong(200, 450))
                 currentRoot = rootInActiveWindow ?: return 
@@ -85,11 +80,9 @@ class WorkflowEngine : AccessibilityService() {
                 }
             } else {
                 val addButton = findNodeByLabelsOrId(currentRoot, listOf("Add New", "Add Passenger"), ID_ADD_BTN)
-                
                 if (addButton != null) {
                     delay(Random.nextLong(200, 400))
                     humanClick(addButton) 
-                    
                     delay(Random.nextLong(750, 1100)) 
                     currentRoot = rootInActiveWindow ?: return 
                     
@@ -97,11 +90,8 @@ class WorkflowEngine : AccessibilityService() {
                     nextNameField?.let {
                         delay(Random.nextLong(250, 500))
                         fillTextField(it, name)
-                        
                         delay(Random.nextLong(400, 700))
-                        findNodeByLabelsOrId(currentRoot, listOf("Save", "जोड़ें"), "")
-                            ?.let { btn -> humanClick(btn) }
-                        
+                        findNodeByLabelsOrId(currentRoot, listOf("Save", "जोड़ें"), "")?.let { btn -> humanClick(btn) }
                         delay(400)
                         currentRoot = rootInActiveWindow ?: return
                     }
@@ -111,32 +101,24 @@ class WorkflowEngine : AccessibilityService() {
         
         delay(Random.nextLong(800, 1200))
         currentRoot = rootInActiveWindow ?: return
-        findNodeByLabelsOrId(currentRoot, listOf("Review Journey", "Continue", "अभी बुक करें"), ID_PROCEED)
-            ?.let { humanClick(it) }
+        findNodeByLabelsOrId(currentRoot, listOf("Review Journey", "Continue", "अभी बुक करें"), ID_PROCEED)?.let { humanClick(it) }
     }
 
     private fun humanClick(node: AccessibilityNodeInfo) {
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
-        
         val finalX = (bounds.centerX() + (-12..12).random()).toFloat()
         val finalY = (bounds.centerY() + (-12..12).random()).toFloat()
-
         val path = Path().apply { 
             moveTo(finalX, finalY) 
             lineTo(finalX + (1..2).random().toFloat(), finalY + (1..2).random().toFloat())
         }
-        
-        val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, 45))
-            .build()
+        val gesture = GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 45)).build()
         dispatchGesture(gesture, null, null)
     }
 
     private fun fillTextField(node: AccessibilityNodeInfo, text: String) {
-        val args = Bundle().apply {
-            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-        }
+        val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text) }
         node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 
