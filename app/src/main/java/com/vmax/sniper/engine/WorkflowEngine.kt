@@ -23,15 +23,12 @@ class WorkflowEngine : AccessibilityService() {
     companion object {
         const val TAG = "VMAX_Sniper_PRO"
         var isSniperActive = false
-        var isProcessing = false // 🛡️ डुप्लीकेट क्लिक रोकने का लॉक
+        var isProcessing = false 
         
-        // 🛠️ जोड़ने वाले पुर्जे (Fixes for Build Errors)
         var targetClass = "SL" 
         const val ACTION_START_SNIPER = "com.vmax.sniper.START"
-        
         const val IRCTC_PKG = "cris.org.in.prs.ima"
         
-        // IRCTC ऐप के असली View IDs
         const val ID_NAME = "$IRCTC_PKG:id/et_passenger_name"
         const val ID_ADD_BTN = "$IRCTC_PKG:id/tv_add_passanger"
         const val ID_PROCEED = "$IRCTC_PKG:id/btn_proceed"
@@ -73,9 +70,9 @@ class WorkflowEngine : AccessibilityService() {
         var currentRoot = rootInActiveWindow ?: return
         
         for ((index, name) in names.withIndex()) {
-            // 🛡️ रैंडम स्क्रॉल (Corrected Global Action)
+            // 🛡️ रैंडम स्क्रॉल - (Corrected Reference)
             if (Random.nextInt(100) < 30) {
-                performGlobalAction(AccessibilityService.GLOBAL_ACTION_SCROLL_FORWARD)
+                performGlobalAction(GLOBAL_ACTION_SCROLL_FORWARD)
                 delay(Random.nextLong(200, 450))
                 currentRoot = rootInActiveWindow ?: return 
             }
