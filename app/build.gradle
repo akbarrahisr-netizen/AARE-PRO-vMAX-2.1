@@ -2,19 +2,32 @@ plugins {
     id 'com.android.application' version '8.2.2'
     id 'org.jetbrains.kotlin.android' version '1.9.10'
     id 'org.jetbrains.kotlin.plugin.serialization' version '1.9.10'
-    id 'kotlin-parcelize'  // ✅ नया टूल जो स्नाइपर डेटा को ले जाएगा
+    id 'kotlin-parcelize'
 }
 
 android {
-    namespace 'com.aare.vmax'
+    // ✅ इसे Manifest से हटाकर यहाँ डाल दिया है ताकि नए नियम का पालन हो
+    namespace 'com.vmax.sniper' 
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.aare.vmax"
+        applicationId "com.vmax.sniper" // 🎯 यही आपके ऐप की असली पहचान है
         minSdk 24
         targetSdk 34
         versionCode 1
         versionName "2.1"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables {
+            useSupportLibrary true
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
     }
 
     buildFeatures {
@@ -36,32 +49,26 @@ android {
 }
 
 dependencies {
-
-    // Core
+    // Core & UI
     implementation "androidx.core:core-ktx:1.12.0"
     implementation "androidx.appcompat:appcompat:1.6.1"
+    implementation "com.google.android.material:material:1.11.0"
 
-    // Compose BOM
+    // Compose (Sniper Dashboard)
     implementation platform("androidx.compose:compose-bom:2024.02.00")
-
     implementation "androidx.activity:activity-compose:1.8.2"
     implementation "androidx.compose.ui:ui"
+    implementation "androidx.compose.ui:ui-graphics"
     implementation "androidx.compose.ui:ui-tooling-preview"
     implementation "androidx.compose.material3:material3"
     debugImplementation "androidx.compose.ui:ui-tooling"
 
-    // Lifecycle
-    implementation "androidx.lifecycle:lifecycle-viewmodel-compose:2.6.1"
-
-    // Coroutines
+    // Engine Components
+    implementation "androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0"
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
-
-    // DataStore
     implementation "androidx.datastore:datastore-preferences:1.0.0"
-
-    // Serialization 
     implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0"
 
-    // 🎯 The Eyes of the Sniper (Google ML Kit Offline Captcha Solver)
-    implementation "com.google.mlkit:text-recognition:16.0.1"
+    // 🎯 Sniper Eyes (OCR for Captcha)
+    implementation "com.google.mlkit:text-recognition:16.0.0"
 }
