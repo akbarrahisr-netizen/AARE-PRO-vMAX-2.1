@@ -14,7 +14,7 @@ import kotlin.random.Random
 
 /**
  * 🦅 VMAX SNIPER HYBRID FINAL
- * यह इंजन अब 10/10 है। इसमें ID सर्च, रैंडम डिले और उंगली की हलचल (Micro-shake) शामिल है।
+ * उस्ताद Md Akbar की जीरो-डिले विधि के लिए पूरी तरह तैयार।
  */
 class WorkflowEngine : AccessibilityService() {
 
@@ -24,31 +24,30 @@ class WorkflowEngine : AccessibilityService() {
         const val TAG = "VMAX_Sniper_PRO"
         var isSniperActive = false
         var isProcessing = false // 🛡️ डुप्लीकेट क्लिक रोकने का लॉक
+        
+        // 🛠️ जोड़ने वाले पुर्जे (Fixes for Build Errors)
+        var targetClass = "SL" 
+        const val ACTION_START_SNIPER = "com.vmax.sniper.START"
+        
         const val IRCTC_PKG = "cris.org.in.prs.ima"
         
-        // IRCTC ऐप के असली View IDs (77 Points)
+        // IRCTC ऐप के असली View IDs
         const val ID_NAME = "$IRCTC_PKG:id/et_passenger_name"
         const val ID_ADD_BTN = "$IRCTC_PKG:id/tv_add_passanger"
         const val ID_PROCEED = "$IRCTC_PKG:id/btn_proceed"
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // 1. क्या स्नाइपर चालू है? क्या कोई काम पहले से चल रहा है?
         if (!isSniperActive || isProcessing) return
         
-        // 2. क्या स्क्रीन पूरी तरह बदल चुकी है? (Stability Check)
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
 
         val rootNode = rootInActiveWindow ?: return
-        
-        // 3. क्या हम IRCTC ऐप के अंदर हैं?
         if (rootNode.packageName != IRCTC_PKG) return
 
-        // 4. क्या हम पैसेंजर वाली स्क्रीन पर पहुँच गए हैं?
         val screenCheck = findNodeByLabelsOrId(rootNode, listOf("Passenger Details", "यात्री विवरण"), ID_NAME)
         if (screenCheck == null) return
 
-        // 🔒 लॉक लगाओ ताकि एक ही स्क्रीन पर बार-बार कोड न चले
         isProcessing = true 
 
         serviceScope.launch {
@@ -63,7 +62,6 @@ class WorkflowEngine : AccessibilityService() {
             } catch (e: Exception) {
                 Log.e(TAG, "Assault Failed: ${e.message}")
             } finally {
-                // 🔓 काम खत्म, अब लॉक खोलो और स्नाइपर को शांत करो
                 isProcessing = false 
                 isSniperActive = false 
             }
@@ -71,33 +69,31 @@ class WorkflowEngine : AccessibilityService() {
     }
 
     private suspend fun executeAssault(names: List<String>) {
-        delay(100) // स्क्रीन सेटल होने का छोटा इंतज़ार
+        delay(100) 
         var currentRoot = rootInActiveWindow ?: return
         
         for ((index, name) in names.withIndex()) {
-            // 🛡️ रैंडम स्क्रॉल (30% चांस - असली इंसान की तरह)
+            // 🛡️ रैंडम स्क्रॉल (Corrected Global Action)
             if (Random.nextInt(100) < 30) {
-                performGlobalAction(GLOBAL_ACTION_SCROLL_FORWARD)
+                performGlobalAction(AccessibilityService.GLOBAL_ACTION_SCROLL_FORWARD)
                 delay(Random.nextLong(200, 450))
                 currentRoot = rootInActiveWindow ?: return 
             }
 
             if (index == 0) {
-                // पैसेंजर 1: सीधा भरें
                 val nameField = findNodeByLabelsOrId(currentRoot, listOf("Name", "यात्री का नाम"), ID_NAME)
                 nameField?.let { 
                     delay(Random.nextLong(300, 600))
                     fillTextField(it, name) 
                 }
             } else {
-                // बाकी पैसेंजर: क्लिक -> रिफ्रेश -> फिल
                 val addButton = findNodeByLabelsOrId(currentRoot, listOf("Add New", "Add Passenger"), ID_ADD_BTN)
                 
                 if (addButton != null) {
                     delay(Random.nextLong(200, 400))
-                    humanClick(addButton) // 👆 असली उंगली वाला टैप
+                    humanClick(addButton) 
                     
-                    delay(Random.nextLong(750, 1100)) // फॉर्म खुलने का इंतज़ार
+                    delay(Random.nextLong(750, 1100)) 
                     currentRoot = rootInActiveWindow ?: return 
                     
                     val nextNameField = findNodeByLabelsOrId(currentRoot, listOf("Name"), ID_NAME)
@@ -116,25 +112,21 @@ class WorkflowEngine : AccessibilityService() {
             }
         }
         
-        // 🎯 फाइनल 'Continue' बटन पर धावा
         delay(Random.nextLong(800, 1200))
         currentRoot = rootInActiveWindow ?: return
         findNodeByLabelsOrId(currentRoot, listOf("Review Journey", "Continue", "अभी बुक करें"), ID_PROCEED)
             ?.let { humanClick(it) }
     }
 
-    // ==================== 🛠️ HUMAN CLICK (The Stealth Feature) ====================
     private fun humanClick(node: AccessibilityNodeInfo) {
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
         
-        // बटन के सेंटर से थोड़ा हटकर (Random Offset)
         val finalX = (bounds.centerX() + (-12..12).random()).toFloat()
         val finalY = (bounds.centerY() + (-12..12).random()).toFloat()
 
         val path = Path().apply { 
             moveTo(finalX, finalY) 
-            // 🛡️ Micro-shake: उंगली की सूक्ष्म हलचल (इंसानी कंपन)
             lineTo(finalX + (1..2).random().toFloat(), finalY + (1..2).random().toFloat())
         }
         
@@ -152,12 +144,10 @@ class WorkflowEngine : AccessibilityService() {
     }
 
     private fun findNodeByLabelsOrId(root: AccessibilityNodeInfo, labels: List<String>, viewId: String): AccessibilityNodeInfo? {
-        // पहले ID से ढूँढो (यह सबसे तेज़ है)
         if (viewId.isNotEmpty()) {
             val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
             if (nodes.isNotEmpty()) return nodes[0]
         }
-        // फिर टेक्स्ट से ढूँढो (Fallback)
         for (label in labels) {
             val nodes = root.findAccessibilityNodeInfosByText(label)
             for (node in nodes) {
