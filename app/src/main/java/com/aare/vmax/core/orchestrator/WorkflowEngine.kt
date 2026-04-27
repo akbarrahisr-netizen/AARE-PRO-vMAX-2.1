@@ -2,9 +2,12 @@ package com.aare.vmax.core.engine
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.accessibilityservice.GestureDescription
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Intent
+import android.graphics.Path
+import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -172,10 +175,11 @@ class WorkflowEngine : AccessibilityService() {
                     return
                 }
                 
+                // 🎯 Anti-Bot Human Click (Book Now)
                 val bookBtn = root.findAccessibilityNodeInfosByViewId(IRCTC.BOOK_NOW_BTN)
                 if (bookBtn.isNotEmpty()) {
-                    clickNode(bookBtn[0])
-                    updateNotification("✅ Booking Submitted!")
+                    humanClick(bookBtn[0])
+                    updateNotification("✅ Booking Submitted (Human Click)!")
                     isArmed = false 
                     return
                 }
@@ -270,7 +274,6 @@ class WorkflowEngine : AccessibilityService() {
         Thread.sleep(50)
         
         val bookingOptSpinner = root.findAccessibilityNodeInfosByViewId(IRCTC.BOOKING_OPT_SPINNER)
-        // ✅ यहाँ बग फिक्स किया गया है (String Check)
         if (bookingOptSpinner.isNotEmpty() && task.bookingOption != "None" && task.bookingOption.isNotBlank()) {
             selectSpinnerValue(bookingOptSpinner[0], task.bookingOption, root)
             Thread.sleep(50)
@@ -300,7 +303,6 @@ class WorkflowEngine : AccessibilityService() {
     private fun selectPaymentMethod(root: AccessibilityNodeInfo) {
         val task = activeTask ?: return
         
-        // ✅ यहाँ Payment वाला बग फिक्स किया गया है
         when (task.payment.category) {
             PaymentCategory.CARDS_NETBANKING -> {
                 val cardsRadio = root.findAccessibilityNodeInfosByViewId(IRCTC.PAYMENT_CARDS)
@@ -343,15 +345,24 @@ class WorkflowEngine : AccessibilityService() {
             }
         }
         
+        // 🎯 Anti-Bot Human Click (Proceed)
         val proceedBtn = root.findAccessibilityNodeInfosByViewId(IRCTC.PROCEED_BTN)
             .ifEmpty { root.findAccessibilityNodeInfosByViewId(IRCTC.CONTINUE_BTN) }
-        if (proceedBtn.isNotEmpty()) clickNode(proceedBtn[0])
+        if (proceedBtn.isNotEmpty()) humanClick(proceedBtn[0])
     }
 
+    // ✅ यहाँ असली ML Kit Captcha फ़ंक्शन मर्ज हो गया है!
     private fun handleCaptcha(root: AccessibilityNodeInfo) {
-        updateNotification("🔐 Captcha Detected - Manual Entry Required")
-        Log.d(TAG, "Captcha Phase Triggered")
-        // TODO: ML Kit Captcha integration 
+        val captchaInput = root.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_INPUT)
+        val captchaImage = root.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_IMAGE)
+        
+        if (captchaInput.isNotEmpty() && captchaImage.isNotEmpty()) {
+            updateNotification("🔐 Auto-Bypassing Captcha...")
+            Log.d(TAG, "Calling AI Captcha Solver")
+            
+            // 🎯 सीधा हमारे AI स्नाइपर सॉल्वर को बुलाएँ
+            CaptchaSolver.executeBypass(this, captchaImage[0], captchaInput[0])
+        }
     }
 
     private fun setTextToNode(node: AccessibilityNodeInfo, text: String) {
@@ -362,6 +373,31 @@ class WorkflowEngine : AccessibilityService() {
 
     private fun clickNode(node: AccessibilityNodeInfo) {
         node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+    }
+
+    // ==================== 🛠️ ANTI-BOT HUMAN CLICK ====================
+    private fun humanClick(node: AccessibilityNodeInfo) {
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+
+        val centerX = bounds.centerX()
+        val centerY = bounds.centerY()
+
+        val randomX = (-15..15).random() 
+        val randomY = (-15..15).random()
+
+        val finalX = (centerX + randomX).toFloat()
+        val finalY = (centerY + randomY).toFloat()
+
+        val path = Path().apply {
+            moveTo(finalX, finalY)
+        }
+        
+        val gestureBuilder = GestureDescription.Builder()
+        gestureBuilder.addStroke(GestureDescription.StrokeDescription(path, 0, 50))
+        
+        dispatchGesture(gestureBuilder.build(), null, null)
+        Log.d(TAG, "🤖 Anti-Bot Tap at: X=$finalX, Y=$finalY")
     }
 
     private fun selectSpinnerValue(spinner: AccessibilityNodeInfo, value: String, root: AccessibilityNodeInfo) {
