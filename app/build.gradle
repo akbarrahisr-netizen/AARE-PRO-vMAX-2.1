@@ -61,5 +61,7 @@ dependencies {
 
     // Serialization 
     implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0"
-}
 
+    // 🎯 The Eyes of the Sniper (Google ML Kit Offline Captcha Solver)
+    implementation "com.google.mlkit:text-recognition:16.0.1"
+}
