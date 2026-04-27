@@ -3,13 +3,12 @@ package com.vmax.sniper
 import android.Manifest
 import android.content.Context
 import android.os.Bundle
-import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,7 +32,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF121212)) {
-                    MainScreen()
+                    VmaxVIPScreen()
                 }
             }
         }
@@ -42,137 +41,172 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen() {
+fun VmaxVIPScreen() {
     val context = LocalContext.current
-    var selectedQuota by remember { mutableStateOf("Tatkal") }
+    
+    var trainNumber by remember { mutableStateOf("") }
+    var latency by remember { mutableStateOf("400") }
+    var paymentMethod by remember { mutableStateOf("UPI") }
+    var selectedClass by remember { mutableStateOf("SL") }
+    val classes = listOf("1A", "2A", "3A", "CC", "3E", "EC", "SL", "FC", "2S", "VS", "VC", "EV")
+    
     val passengers = remember { mutableStateListOf<PassengerData>() }
     
     LaunchedEffect(Unit) {
-        if (passengers.isEmpty()) {
-            repeat(4) { passengers.add(PassengerData(name = "", age = "")) }
-        }
+        if (passengers.isEmpty()) repeat(4) { passengers.add(PassengerData()) }
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("🎯 VMAX Sniper Pro", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+        Text("🦅 VMAX SNIPER VIP", color = Color(0xFF7E57C2), fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        Text("PREMIUM AUTOMATION BOARD", color = Color.Gray, fontSize = 12.sp)
         
         Spacer(modifier = Modifier.height(20.dp))
-        
-        // Quota Selection
+
+        // Train Card
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp)) {
-                Text("📋 Booking Type", color = Color(0xFFFF9800), fontWeight = FontWeight.Bold)
+                Text("🚂 TRAIN & NETWORK", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = selectedQuota == "Tatkal",
-                        onClick = { selectedQuota = "Tatkal" },
-                        label = { Text("Tatkal (11:00 AM)", fontSize = 12.sp) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(0xFFD32F2F)
-                        )
+                OutlinedTextField(
+                    value = trainNumber, onValueChange = { trainNumber = it },
+                    label = { Text("Train Number") }, modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = latency, onValueChange = { latency = it },
+                    label = { Text("Latency Offset (ms)") }, modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Class Selection
+        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text("🎯 TARGET CLASS", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                var expanded by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+                    OutlinedTextField(
+                        value = selectedClass, onValueChange = {}, readOnly = true,
+                        label = { Text("Select Class") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor()
                     )
-                    FilterChip(
-                        selected = selectedQuota == "Premium",
-                        onClick = { selectedQuota = "Premium" },
-                        label = { Text("Premium (10:00 AM)", fontSize = 12.sp) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(0xFFD32F2F)
-                        )
+                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        classes.forEach { className ->
+                            DropdownMenuItem(
+                                text = { Text(className) },
+                                onClick = { selectedClass = className; expanded = false }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Passengers
+        Text("👥 PASSENGERS", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.align(Alignment.Start))
+        passengers.forEachIndexed { index, p ->
+            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.padding(vertical = 4.dp).fillMaxWidth()) {
+                Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${index + 1}.", color = Color(0xFFFF9800), fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    OutlinedTextField(
+                        value = p.name, onValueChange = { passengers[index] = p.copy(name = it) },
+                        label = { Text("Name") }, modifier = Modifier.weight(1f), singleLine = true
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    OutlinedTextField(
+                        value = p.age, onValueChange = { passengers[index] = p.copy(age = it) },
+                        label = { Text("Age") }, modifier = Modifier.width(75.dp), singleLine = true
                     )
                 }
             }
         }
-        
-        Spacer(modifier = Modifier.height(12.dp))
-        
-        // Passenger List Title
-        Text("👥 Passengers", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.align(Alignment.Start))
-        
-        Spacer(modifier = Modifier.height(4.dp))
 
-        LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            itemsIndexed(passengers) { index, p ->
-                Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))) {
-                    Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            text = "${index + 1}.",
-                            color = Color(0xFFFF9800),
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.align(Alignment.CenterVertically)
-                        )
-                        OutlinedTextField(
-                            value = p.name,
-                            onValueChange = { passengers[index] = p.copy(name = it) },
-                            label = { Text("Name", color = Color.Gray) },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            colors = TextFieldDefaults.outlinedTextFieldColors(
-                                focusedBorderColor = Color(0xFFFF9800),
-                                focusedLabelColor = Color(0xFFFF9800)
-                            )
-                        )
-                        OutlinedTextField(
-                            value = p.age,
-                            onValueChange = { passengers[index] = p.copy(age = it) },
-                            label = { Text("Age", color = Color.Gray) },
-                            modifier = Modifier.width(70.dp),
-                            singleLine = true,
-                            colors = TextFieldDefaults.outlinedTextFieldColors(
-                                focusedBorderColor = Color(0xFFFF9800),
-                                focusedLabelColor = Color(0xFFFF9800)
-                            )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Payment
+        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text("💳 PAYMENT BOARD", color = Color(0xFF00E676), fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("UPI", "PhonePe", "Paytm").forEach { method ->
+                        FilterChip(
+                            selected = paymentMethod == method,
+                            onClick = { paymentMethod = method },
+                            label = { Text(method) },
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Color(0xFF00E676))
                         )
                     }
                 }
             }
         }
-        
-        Spacer(modifier = Modifier.height(12.dp))
 
-        // Instruction Text
-        val targetHour = if (selectedQuota == "Tatkal") 11 else 10
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // Timing Logic
+        val classPos = classes.indexOf(selectedClass)
+        val targetHour = if (classPos < 6) 10 else 11
         val loginTime = if (targetHour == 11) "10:58" else "9:58"
         
         Text(
-            text = "⚠️ $loginTime AM पर IRCTC मे लॉगिन करके पैसेंजर स्क्रीन पर तैयार रहें!",
-            color = Color(0xFFFF9800),
-            fontSize = 11.sp,
-            modifier = Modifier.padding(bottom = 8.dp)
+            text = "⏰ $selectedClass fires at $targetHour:00:00 AM Sharp!",
+            color = Color(0xFFFF9800), fontWeight = FontWeight.Medium
+        )
+        
+        Text(
+            text = "📌 Login at $loginTime AM and reach passenger screen",
+            color = Color.Gray, fontSize = 11.sp
         )
 
-        // 🔥 THE DEADLY MERGE BUTTON
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // ARM Button
         Button(
             onClick = {
                 val nameString = passengers.map { it.name }.filter { it.isNotBlank() }.joinToString(",")
                 if (nameString.isEmpty()) {
-                    Toast.makeText(context, "उस्ताद, कम से कम एक पैसेंजर का नाम तो डालिए!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "उस्ताद, कम से कम एक नाम!", Toast.LENGTH_SHORT).show()
                     return@Button
                 }
 
-                // Save data
                 val sharedPrefs = context.getSharedPreferences("VMAX_DATA", Context.MODE_PRIVATE)
-                sharedPrefs.edit().putString("PASSENGER_LIST", nameString).apply()
+                sharedPrefs.edit().apply {
+                    putString("PASSENGER_LIST", nameString)
+                    putString("TRAIN_NO", trainNumber)
+                    putString("LATENCY", latency)
+                    putString("PAYMENT", paymentMethod)
+                    putString("TARGET_CLASS", selectedClass)
+                }.apply()
 
-                // Set target class based on quota
-                WorkflowEngine.targetClass = if (selectedQuota == "Tatkal") "SL" else "3A"
+                WorkflowEngine.targetClass = selectedClass
 
-                // Schedule sniper
                 TimeSniper.prepareSniper()
                 TimeSniper.scheduleFire(targetHour, 0) {
                     WorkflowEngine.isSniperActive = true
                 }
                 
-                Toast.makeText(context, "🎯 SNIPER LOCKED! ${if(selectedQuota == "Tatkal") "SL @ 11:00" else "3A @ 10:00"} पर वार होगा!", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "🎯 SNIPER LOCKED: $selectedClass @ ${targetHour}:00 AM!", Toast.LENGTH_LONG).show()
             },
-            modifier = Modifier.fillMaxWidth().height(56.dp),
+            modifier = Modifier.fillMaxWidth().height(65.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
         ) {
-            Text("🔥 ARM ZERO-DELAY SNIPER", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text("🔥 ARM ZERO-DELAY SNIPER", fontWeight = FontWeight.Bold, fontSize = 18.sp)
         }
+        
+        Spacer(modifier = Modifier.height(40.dp))
     }
 }
 
