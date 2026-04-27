@@ -3,6 +3,7 @@ name: Android Build
 on:
   push:
     branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -17,22 +18,16 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # 🛠️ सुधार 1: gradlew को चलाने की इजाजत देना (Very Important)
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.2'
 
-      # 🛠️ सुधार 2: 'clean' जोड़ना ताकि पुराना कचरा एरर न दे
       - name: Build APK
-        run: ./gradlew clean assembleDebug --stacktrace
+        run: gradle clean assembleDebug --stacktrace
 
-      # 🛠️ सुधार 3: पक्का करना कि सही नाम से APK मिले
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: VMAX-Sniper-VIP-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
