@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // 🛡️ SMS Permissions - OTP ऑटो-रीड के लिए तैयार
+        // 🛡️ SMS Permissions - OTP ऑटो-रीड की तैयारी
         ActivityCompat.requestPermissions(this, 
             arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS), 101)
 
@@ -54,16 +54,20 @@ fun VmaxVIPScreen() {
     
     val passengers = remember { mutableStateListOf<PassengerData>() }
     
+    // शुरुआती 4 खाली पैसेंजर लोड करना
     LaunchedEffect(Unit) {
         if (passengers.isEmpty()) repeat(4) { passengers.add(PassengerData()) }
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("🦅 VMAX SNIPER VIP", color = Color(0xFF7E57C2), fontSize = 30.sp, fontWeight = FontWeight.Bold)
-        Text("USTAD MD AKBAR EDITION", color = Color.Gray, fontSize = 12.sp)
+        Text("USTAD EDITION - ZERO DELAY", color = Color.Gray, fontSize = 12.sp)
         
         Spacer(modifier = Modifier.height(20.dp))
 
@@ -74,19 +78,21 @@ fun VmaxVIPScreen() {
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = trainNumber, onValueChange = { trainNumber = it },
-                    label = { Text("Train Number") }, modifier = Modifier.fillMaxWidth()
+                    label = { Text("Train Number") }, modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = latency, onValueChange = { latency = it },
-                    label = { Text("Latency Offset (ms)") }, modifier = Modifier.fillMaxWidth()
+                    label = { Text("Latency Offset (ms)") }, modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
                 )
             }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // 🎯 QUICK FILL - (उस्ताद का सीक्रेट फीचर)
+        // ⚡ QUICK FILL - (वही पैसेंजर लिस्ट जो आपको चाहिए)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Button(
                 onClick = {
@@ -111,7 +117,7 @@ fun VmaxVIPScreen() {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // 🎯 CLASS SELECTION
+        // 🎯 TARGET CLASS
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Text("🎯 TARGET CLASS", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
@@ -137,7 +143,7 @@ fun VmaxVIPScreen() {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // 👥 PASSENGERS
+        // 👥 PASSENGERS LIST
         Text("👥 PASSENGERS", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.align(Alignment.Start))
         passengers.forEachIndexed { index, p ->
             Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.padding(vertical = 4.dp).fillMaxWidth()) {
@@ -178,7 +184,7 @@ fun VmaxVIPScreen() {
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // ⏰ TIMING INFO
+        // ⏰ TIMING CALCULATION
         val classPos = classes.indexOf(selectedClass)
         val targetHour = if (classPos < 6) 10 else 11
         
@@ -186,19 +192,19 @@ fun VmaxVIPScreen() {
             text = "🎯 SNIPER FIRING AT $targetHour:00:00.000",
             color = Color(0xFFFF9800), fontWeight = FontWeight.Bold, fontSize = 18.sp
         )
-        Text("Manual Reach: Passenger Details Screen", color = Color.Gray, fontSize = 12.sp)
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // 🔥 ARM BUTTON
+        // 🔥 THE ARM BUTTON
         Button(
             onClick = {
                 val nameString = passengers.map { it.name }.filter { it.isNotBlank() }.joinToString(",")
                 if (nameString.isEmpty()) {
-                    Toast.makeText(context, "उस्ताद, कम से कम एक नाम!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "उस्ताद, नाम तो डालिए!", Toast.LENGTH_SHORT).show()
                     return@Button
                 }
 
+                // SharedPreferences में डेटा की पक्की एंट्री
                 val sharedPrefs = context.getSharedPreferences("VMAX_DATA", Context.MODE_PRIVATE)
                 sharedPrefs.edit().apply {
                     putString("PASSENGER_LIST", nameString)
@@ -208,14 +214,16 @@ fun VmaxVIPScreen() {
                     putString("TARGET_CLASS", selectedClass)
                 }.apply()
 
+                // इंजन को अलर्ट करें (Fix for the build error)
                 WorkflowEngine.targetClass = selectedClass
 
+                // ⏰ परमाणु समय सिंक और लॉक
                 TimeSniper.prepareSniper()
                 TimeSniper.scheduleFire(targetHour, 0) {
                     WorkflowEngine.isSniperActive = true
                 }
                 
-                Toast.makeText(context, "🎯 SNIPER LOCKED: $selectedClass @ ${targetHour}:00 AM", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "🎯 SNIPER ARMED: $selectedClass @ ${targetHour}:00 AM", Toast.LENGTH_LONG).show()
             },
             modifier = Modifier.fillMaxWidth().height(65.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
