@@ -1,16 +1,18 @@
 pluginManagement {
     repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
+        google()           // Android libraries
+        mavenCentral()     // Kotlin libraries  
+        gradlePluginPortal() // Gradle plugins
     }
 }
 
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        google()
-        mavenCentral()
+        google()           // Android libraries
+        mavenCentral()     // Kotlin libraries
+        // Add if needed:
+        // maven { url "https://jitpack.io" }
     }
 }
 
