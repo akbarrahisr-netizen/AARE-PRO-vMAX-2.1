@@ -72,7 +72,7 @@ class WorkflowEngine : AccessibilityService() {
         for ((index, name) in names.withIndex()) {
             // 🛡️ रैंडम स्क्रॉल - (Corrected Reference)
             if (Random.nextInt(100) < 30) {
-                performGlobalAction(GLOBAL_ACTION_SCROLL_FORWARD)
+                performGlobalAction(AccessibilityService.GLOBAL_ACTION_SCROLL_FORWARD)
                 delay(Random.nextLong(200, 450))
                 currentRoot = rootInActiveWindow ?: return 
             }
