@@ -5,14 +5,14 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.content.ComponentName // ✅ उस्ताद का फिक्स 1
-import android.content.Intent
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings // ✅ उस्ताद का फिक्स 2
+import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -71,8 +71,6 @@ class WorkflowEngine : AccessibilityService() {
     private var activeTask: SniperTask? = null
     private var isArmed = false 
     private var currentPassengerIndex = 0
-
-    // 🎯 नए कोड से ली गई बेहतर Anti-Bot विशेषताएँ
     private var isProcessing = false
 
     override fun onServiceConnected() {
@@ -240,7 +238,6 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // ==================== 🎯 PASSENGER DETAILS (with Human-like delays) ====================
     private suspend fun fillPassengerDetails(root: AccessibilityNodeInfo) {
         val task = activeTask ?: return
         val nameFields = root.findAccessibilityNodeInfosByViewId(IRCTC.NAME_INPUT)
@@ -250,6 +247,7 @@ class WorkflowEngine : AccessibilityService() {
         for (i in currentPassengerIndex until min(nameFields.size, task.passengers.size)) {
             val passenger = task.passengers[i]
             
+            // ✅ उस्ताद का फिक्स: Scroll के साथ AccessibilityService. लगा हुआ है
             if (Random.nextInt(100) < 20 && i > 0) {
                 performGlobalAction(AccessibilityService.GLOBAL_ACTION_SCROLL_FORWARD)
                 delay(Random.nextLong(200, 450))
