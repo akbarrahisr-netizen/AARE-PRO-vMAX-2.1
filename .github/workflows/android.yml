@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # Node.js 24 warning fix
 
     steps:
       - uses: actions/checkout@v4
@@ -17,15 +19,15 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
+          cache: 'gradle'
 
-      # Purane Setup Gradle ko hata kar ye simple script use karein
-      - name: Force Install Gradle and Wrapper
+      # Yeh step missing wrapper aur permission dono fix karega
+      - name: Force Gradle Setup
         run: |
-          sudo apt-get install gradle -y
-          gradle wrapper
+          gradle wrapper --gradle-version 8.2
           chmod +x gradlew
 
-      - name: Build APK
+      - name: Build with Gradle
         run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
