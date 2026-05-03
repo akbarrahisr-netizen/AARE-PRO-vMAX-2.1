@@ -1,0 +1,59 @@
+package com.vmax.sniper.core.model
+
+import android.os.Parcelable
+import kotlinx.parcelize.Parcelize
+
+enum class PaymentCategory(val display: String) {
+    CARDS_NETBANKING("Cards & Netbanking"),
+    BHIM_UPI("BHIM / UPI"),
+    E_WALLETS("e-Wallets"),
+    UPI_ID("UPI ID"),
+    UPI_APPS("UPI Apps")
+}
+
+enum class WalletType(val display: String) {
+    IRCTC("IRCTC eWallet"),
+    MOBIKWIK("Mobikwik™")
+}
+
+enum class UpiApp(val display: String) {
+    PHONEPE("PhonePe"),
+    PAYTM("Paytm"),
+    CRED("CRED UPI"),
+    BHIM_PAYTM("BHIM UPI (Powered by Paytm)")
+}
+
+enum class BookingOption(val value: Int, val display: String) {
+    NONE(0, "None"),
+    SAME_COACH(1, "Book, only if all berths are allotted in same coach"),
+    ONE_LOWER_BERTH(2, "Book, only if at least 1 lower berth is allotted"),
+    TWO_LOWER_BERTHS(3, "Book, only if 2 lower berths are allotted")
+}
+
+enum class TravelClass(val code: String, val display: String) {
+    AC_FIRST("1A", "AC First Class (1A)"),
+    AC_2TIER("2A", "AC 2 Tier (2A)"),
+    AC_3TIER("3A", "AC 3 Tier (3A)"),
+    SLEEPER("SL", "Sleeper (SL)")
+}
+
+enum class Quota(val code: String, val display: String) {
+    GENERAL("GN", "General"),
+    TATKAL("TQ", "Tatkal")
+}
+
+@Parcelize
+data class PaymentDetails(
+    var category: PaymentCategory = PaymentCategory.BHIM_UPI,
+    var upiId: String = "",
+    var walletType: WalletType = WalletType.IRCTC,
+    var upiApp: UpiApp = UpiApp.PHONEPE,
+    var manualPayment: Boolean = false,
+    var autofillOTP: Boolean = true
+) : Parcelable {
+    fun isValid(): Boolean {
+        if (category == PaymentCategory.UPI_ID && upiId.isBlank()) return false
+        return true
+    }
+    fun getDisplayText(): String = category.display
+}
