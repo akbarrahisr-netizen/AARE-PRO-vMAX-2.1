@@ -23,10 +23,15 @@ jobs:
         with:
           gradle-version: '8.2'
 
-      # ✅ YAHI WO CODE HAI JO ERROR THEEK KAREGA
+      # 🟢 STEP 1: Missing engine (Wrapper) ko install karega
+      - name: Force Generate Wrapper
+        run: gradle wrapper
+
+      # 🟢 STEP 2: File chalane ki permission dega
       - name: Grant Execute Permission for Gradlew
         run: chmod +x gradlew
 
+      # 🟢 STEP 3: Build process shuru karega
       - name: Build APK
         run: ./gradlew assembleDebug --stacktrace
 
