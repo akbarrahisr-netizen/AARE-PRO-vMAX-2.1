@@ -7,27 +7,25 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    runs-on: ubuntu-22.04 # Thoda purana stable server
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 11 # Purana stable Java
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '11'
           distribution: 'temurin'
-          cache: 'gradle'
 
-      # 🟢 YEH STEP ERROR THEEK KAREGA
-      - name: Force Gradle Setup
+      - name: Force Clean Setup
         run: |
-          gradle wrapper --gradle-version 8.0
+          rm -f gradlew
+          rm -rf gradle/wrapper
+          gradle wrapper --gradle-version 7.5
           chmod +x gradlew
 
-      - name: Build with Gradle
+      - name: Build APK
         run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
