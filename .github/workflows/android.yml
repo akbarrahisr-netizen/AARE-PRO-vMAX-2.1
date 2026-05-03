@@ -24,7 +24,7 @@ jobs:
           gradle-version: '8.2'
 
       - name: Build APK
-        run: gradle clean assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
