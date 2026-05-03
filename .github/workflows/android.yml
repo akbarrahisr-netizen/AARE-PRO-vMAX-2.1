@@ -18,20 +18,13 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.2'
+      # Purane Setup Gradle ko hata kar ye simple script use karein
+      - name: Force Install Gradle and Wrapper
+        run: |
+          sudo apt-get install gradle -y
+          gradle wrapper
+          chmod +x gradlew
 
-      # 🟢 STEP 1: Missing engine (Wrapper) ko install karega
-      - name: Force Generate Wrapper
-        run: gradle wrapper
-
-      # 🟢 STEP 2: File chalane ki permission dega
-      - name: Grant Execute Permission for Gradlew
-        run: chmod +x gradlew
-
-      # 🟢 STEP 3: Build process shuru karega
       - name: Build APK
         run: ./gradlew assembleDebug --stacktrace
 
