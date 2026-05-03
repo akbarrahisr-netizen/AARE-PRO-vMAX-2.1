@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # Node.js 24 warning fix
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - uses: actions/checkout@v4
@@ -21,10 +21,10 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
-      # Yeh step missing wrapper aur permission dono fix karega
+      # 🟢 YEH STEP ERROR THEEK KAREGA
       - name: Force Gradle Setup
         run: |
-          gradle wrapper --gradle-version 8.2
+          gradle wrapper --gradle-version 8.0
           chmod +x gradlew
 
       - name: Build with Gradle
