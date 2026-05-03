@@ -18,14 +18,12 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # Yeh step Java 17 aur Gradle 8.2 ka sahi combo banayega
-      - name: Fix and Generate Wrapper
-        run: |
-          gradle wrapper --gradle-version 8.2
-          chmod +x gradlew
-
-      - name: Build APK
-        run: ./gradlew assembleDebug --stacktrace
+      # 🟢 YEH STEP GRADLE KO BYPASS KAREGA
+      - name: Force Build with Built-in Gradle
+        uses: gradle/gradle-build-action@v3
+        with:
+          gradle-version: 8.2 # Seedha 8.2 version install karega bina project ko chhede
+          arguments: assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
