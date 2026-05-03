@@ -38,7 +38,7 @@
         </activity>
 
         <service
-            android:name=".engine.WorkflowEngine" 
+            android:name=".core.engine.WorkflowEngine" 
             android:exported="true"
             android:label="VMAX Sniper Engine"
             android:foregroundServiceType="specialUse"
