@@ -2,10 +2,11 @@
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewClicked|typeViewTextChanged|typeViewScrolled"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
-    android:notificationTimeout="20"
-    android:canRetrieveWindowContent="true"
+    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
     android:canPerformGestures="true"
-    android:packageNames="cris.org.in.prs.ima,com.enstage.wibmo.hdfc,net.one97.paytm,com.google.android.apps.nbu.paisa.user,com.phonepe.app,in.org.npci.upiapp,com.mobikwik_new"
-    android:description="@string/accessibility_service_description"
-    android:isAccessibilityTool="true" />
+    android:canRetrieveWindowContent="true"
+    android:canTakeScreenshot="true"
+    android:isAccessibilityTool="true"
+    android:notificationTimeout="10"
+    android:packageNames="cris.org.in.prs.ima,com.enstage.wibmo.hdfc,net.one97.paytm,com.google.android.apps.nbu.paisa.user,com.phonepe.app,in.org.npci.upiapp,com.mobikwik_new,com.amazon.mShop.android.shopping"
+    android:description="@string/accessibility_service_description" />
