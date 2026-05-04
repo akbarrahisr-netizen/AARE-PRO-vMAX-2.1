@@ -1,10 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">VMAX Pro</string>
+    <string name="app_name">VMAX Pro Sniper</string>
     
     <string name="accessibility_service_description">
-        VMAX Pro uses Accessibility Service to help automate IRCTC booking tasks for testing purposes. 
-        It only interacts with the official IRCTC app and never collects or shares personal data. 
-        You can disable this anytime in Settings.
+        VMAX Pro Sniper helps automate IRCTC Tatkal booking by auto-filling passenger details and solving captcha automatically. 
+        It supports UPI payment apps for a seamless booking experience. 
+        This tool interacts only with the official IRCTC app for testing and automation purposes, 
+        ensuring no personal data is collected or shared. 
+        You can disable accessibility service anytime in Settings.
     </string>
+    
+    <!-- Notification Channel Names -->
+    <string name="notification_channel_name">VMAX Sniper</string>
+    <string name="notification_channel_description">Shows booking status and captcha alerts</string>
+    
+    <!-- Button Texts -->
+    <string name="arm_sniper">ARM SNIPER</string>
+    <string name="stop_sniper">STOP SNIPER</string>
+    <string name="enable_accessibility">Enable Accessibility</string>
+    <string name="accessibility_on">Accessibility ON</string>
+    
+    <!-- Status Messages -->
+    <string name="sniper_ready">VMAX Sniper Ready</string>
+    <string name="sniper_waiting">Waiting for Tatkal time</string>
+    <string name="sniper_arming">Sniper Armed!</string>
+    <string name="sniper_stopped">Sniper Stopped!</string>
+    <string name="captcha_solving">Solving Captcha...</string>
+    <string name="captcha_solved">Captcha Solved!</string>
+    <string name="booking_submitted">Booking Submitted!</string>
+    
+    <!-- Error Messages -->
+    <string name="error_accessibility">Enable Accessibility Service first!</string>
+    <string name="error_train_number">Train number must be 5 digits!</string>
+    <string name="error_date">Invalid journey date! Use DD-MM-YYYY format</string>
+    <string name="error_passenger">Fill at least one passenger with Name &amp; Age!</string>
+    <string name="error_mobile">Mobile number must be 10 digits!</string>
 </resources>
