@@ -1,17 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- ==================== NETWORK PERMISSIONS ==================== -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- ==================== SMS PERMISSIONS (OTP Auto-fill) ==================== -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.READ_SMS" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- ==================== FOREGROUND SERVICE PERMISSIONS (Captcha Screenshot) ==================== -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+
+    <!-- ==================== SYSTEM & NOTIFICATION PERMISSIONS ==================== -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    
+    <!-- ==================== ACCESSIBILITY SERVICE ==================== -->
+    <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" />
 
+    <!-- ==================== QUERIES (UPI Apps for Payment) ==================== -->
     <queries>
-        <package android:name="cris.org.in.prs.ima" /> <package android:name="in.org.npci.upiapp" /> <package android:name="net.one97.paytm" /> <package android:name="com.google.android.apps.nbu.paisa.user" /> <package android:name="com.phonepe.app" /> <package android:name="com.hdfcbank.payzapp" /> <package android:name="com.msf.kbank.mobile" /> </queries>
+        <package android:name="cris.org.in.prs.ima" />
+        <package android:name="in.org.npci.upiapp" />
+        <package android:name="net.one97.paytm" />
+        <package android:name="com.google.android.apps.nbu.paisa.user" />
+        <package android:name="com.phonepe.app" />
+        <package android:name="com.hdfcbank.payzapp" />
+        <package android:name="com.msf.kbank.mobile" />
+        <package android:name="com.amazon.mShop.android.shopping" />
+    </queries>
 
     <application
         android:allowBackup="true"
@@ -19,8 +40,14 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
         android:usesCleartextTraffic="true"
-        android:hardwareAccelerated="true"> 
-        
+        android:hardwareAccelerated="true">
+
+        <!-- ✅ ML Kit Dependencies (Fast OCR) -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="ocr,tflite" />
+
+        <!-- ✅ Main Activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -31,11 +58,12 @@
             </intent-filter>
         </activity>
 
+        <!-- ✅ Accessibility Service (Workflow Engine) -->
         <service
-            android:name=".core.engine.WorkflowEngine" 
+            android:name=".core.engine.WorkflowEngine"
             android:exported="true"
             android:label="VMAX Sniper Engine"
-            android:foregroundServiceType="specialUse"
+            android:foregroundServiceType="specialUse|mediaProjection"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             
             <intent-filter>
@@ -52,4 +80,5 @@
         </service>
 
     </application>
+
 </manifest>
