@@ -3,7 +3,6 @@ package com.vmax.sniper.core.model
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
 
-// ✅ FIX 1: PaymentCategory with Parcelable
 @Parcelize
 enum class PaymentCategory(val display: String) : Parcelable {
     CARDS_NETBANKING("Cards & Netbanking"),
@@ -13,14 +12,12 @@ enum class PaymentCategory(val display: String) : Parcelable {
     UPI_APPS("UPI Apps")
 }
 
-// ✅ FIX 2: WalletType with Parcelable
 @Parcelize
 enum class WalletType(val display: String) : Parcelable {
     IRCTC("IRCTC eWallet"),
     MOBIKWIK("Mobikwik™")
 }
 
-// ✅ FIX 3: UpiApp with Parcelable
 @Parcelize
 enum class UpiApp(val display: String) : Parcelable {
     PHONEPE("PhonePe"),
@@ -29,7 +26,6 @@ enum class UpiApp(val display: String) : Parcelable {
     BHIM_PAYTM("BHIM UPI (Powered by Paytm)")
 }
 
-// ✅ FIX 4: BookingOption with Parcelable
 @Parcelize
 enum class BookingOption(val value: Int, val display: String) : Parcelable {
     NONE(0, "None"),
@@ -38,7 +34,6 @@ enum class BookingOption(val value: Int, val display: String) : Parcelable {
     TWO_LOWER_BERTHS(3, "Book, only if 2 lower berths are allotted")
 }
 
-// ✅ FIX 5: TravelClass with Parcelable
 @Parcelize
 enum class TravelClass(val code: String, val display: String) : Parcelable {
     AC_FIRST("1A", "AC First Class (1A)"),
@@ -47,14 +42,12 @@ enum class TravelClass(val code: String, val display: String) : Parcelable {
     SLEEPER("SL", "Sleeper (SL)")
 }
 
-// ✅ FIX 6: Quota with Parcelable
 @Parcelize
 enum class Quota(val code: String, val display: String) : Parcelable {
     GENERAL("GN", "General"),
     TATKAL("TQ", "Tatkal")
 }
 
-// ✅ This is already correct
 @Parcelize
 data class PaymentDetails(
     var category: PaymentCategory = PaymentCategory.BHIM_UPI,
