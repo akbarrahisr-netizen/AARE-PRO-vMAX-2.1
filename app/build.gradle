@@ -6,12 +6,11 @@ plugins {
 }
 
 android {
-    // ✅ इसे Manifest से हटाकर यहाँ डाल दिया है ताकि नए नियम का पालन हो
-    namespace 'com.vmax.sniper' 
+    namespace 'com.vmax.sniper'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.vmax.sniper" // 🎯 यही आपके ऐप की असली पहचान है
+        applicationId "com.vmax.sniper"
         minSdk 24
         targetSdk 34
         versionCode 1
@@ -65,6 +64,10 @@ dependencies {
 
     // Engine Components
     implementation "androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0"
+    
+    // ✅ FIX 1: Add lifecycle-runtime-compose (for LocalLifecycleOwner)
+    implementation "androidx.lifecycle:lifecycle-runtime-compose:2.7.0"
+    
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
     implementation "androidx.datastore:datastore-preferences:1.0.0"
     implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0"
