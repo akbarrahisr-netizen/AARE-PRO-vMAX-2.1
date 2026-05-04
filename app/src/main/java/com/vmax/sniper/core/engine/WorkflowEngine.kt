@@ -129,7 +129,6 @@ class WorkflowEngine : AccessibilityService() {
         } finally { root.recycle() }
     }
 
-    // 🎯 SELECT SPECIFIC CLASS AFTER REFRESH (Filled)
     private suspend fun selectSpecificClassAfterRefresh() {
         val task = activeTask ?: return
         delay(150)
@@ -142,7 +141,6 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // 🎯 RECYCLE SAFETY logic in Event Handler
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!isArmed || isProcessing) return
         val eventRoot = rootInActiveWindow ?: return
@@ -177,7 +175,9 @@ class WorkflowEngine : AccessibilityService() {
                 val captchaInput = freshRoot.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_INPUT)
                 if (captchaInput.isNotEmpty() && activeTask?.captchaAutofill == true) {
                     val captchaImage = freshRoot.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_IMAGE)
-                    if (captchaImage.isNotEmpty()) CaptchaSolver.executeBypass(this@WorkflowEngine, captchaImage[0], captchaInput[0])
+                    if (captchaImage.isNotEmpty()) {
+                        CaptchaSolver.executeBypass(this@WorkflowEngine, captchaImage[0], captchaInput[0])
+                    }
                     return@launch
                 }
                 
@@ -203,7 +203,7 @@ class WorkflowEngine : AccessibilityService() {
         return false
     }
 
-    // 🎯 WATCHDOG with Screen Verification
+    // ==================== 🎯 WATCHDOG with Screen Verification ====================
     private fun startWatchdog() {
         watchdogJob?.cancel()
         watchdogJob = serviceScope.launch {
@@ -211,15 +211,38 @@ class WorkflowEngine : AccessibilityService() {
             while (isArmed && isReviewClicked) {
                 val root = rootInActiveWindow
                 if (root != null && root.packageName == IRCTC.PKG) {
-                    val isReviewPage = findNodeFast(root, listOf("Review Journey"), "") != null
+                    
+                    val isReviewPage = findNodeFast(root, listOf("Review Journey", "Review"), "") != null
+                    
                     if (isReviewPage) {
-                        val proceedBtn = findNodeFast(root, listOf("Continue"), IRCTC.PROCEED_BTN)
+                        val proceedBtn = findNodeFast(root, listOf("Continue", "अभी बुक करें"), IRCTC.PROCEED_BTN)
                         if (proceedBtn?.isVisibleToUser == true && retryCount < 3) {
-                            retryCount++; humanClickFast(proceedBtn); delay(200)
+                            retryCount++
+                            humanClickFast(proceedBtn)
+                            delay(200)
+                            Log.d(TAG, "🔄 Watchdog Retry #$retryCount")
                         }
+                    } else {
+                        retryCount = 0
                     }
+                    
                     if (root.findAccessibilityNodeInfosByViewId(IRCTC.PAYMENT_CARDS).isNotEmpty()) {
-                        isReviewClicked = false; selectPaymentFast(root); watchdogJob?.cancel(); return@launch
+                        Log.d(TAG, "🎯 Payment Page Detected by Watchdog!")
+                        isReviewClicked = false
+                        isProcessing = true
+                        selectPaymentFast(root)
+                        isProcessing = false
+                        watchdogJob?.cancel()
+                        return@launch
+                    }
+                    
+                    val captchaInput = root.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_INPUT)
+                    if (captchaInput.isNotEmpty() && activeTask?.captchaAutofill == true) {
+                        val captchaImage = root.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_IMAGE)
+                        if (captchaImage.isNotEmpty()) {
+                            Log.d(TAG, "🔐 Captcha Detected by Watchdog!")
+                            CaptchaSolver.executeBypass(this@WorkflowEngine, captchaImage[0], captchaInput[0])
+                        }
                     }
                 }
                 try { root?.recycle() } catch (e: Exception) {}
@@ -238,7 +261,6 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // 🎯 ADVANCE OPTIONS (Filled)
     private suspend fun awaitAdvanceOptionsFast() {
         val task = activeTask ?: return
         val root = rootInActiveWindow ?: return
@@ -271,7 +293,6 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // 🎯 MULTI-PASSENGER with Overwrite Check
     private suspend fun fillAllDetailsSuperFast() {
         val task = activeTask ?: return
         var currentRoot = rootInActiveWindow ?: return
@@ -307,7 +328,6 @@ class WorkflowEngine : AccessibilityService() {
             currentPassengerIndex = i + 1
         }
 
-        // Children
         for (child in task.children) {
             findNodeFast(currentRoot, listOf("Add Infant", "शिशु जोड़ें"), IRCTC.ADD_CHILD_BTN)?.let {
                 humanClickFast(it); addDelay(); currentRoot = rootInActiveWindow ?: return
@@ -319,7 +339,6 @@ class WorkflowEngine : AccessibilityService() {
 
         awaitAdvanceOptionsFast()
         
-        // Coach & Mobile
         if (task.coachPreferred && task.coachId.isNotBlank()) {
             findNodeFast(currentRoot, emptyList(), IRCTC.COACH_PREF_INPUT)?.let { 
                 setTextFast(it, task.coachId.uppercase()); fastDelay()
@@ -338,7 +357,6 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // 🎯 SPINNER with Verification (Green Tick)
     private suspend fun selectSpinnerWithRetry(root: AccessibilityNodeInfo, spinnerId: String, optionText: String): Boolean {
         val spinner = findNodeFast(root, emptyList(), spinnerId) ?: return false
         humanClickFast(spinner); delay(350)
@@ -356,7 +374,6 @@ class WorkflowEngine : AccessibilityService() {
         return false
     }
 
-    // 🎯 PAYMENT SELECTION
     private suspend fun selectPaymentFast(root: AccessibilityNodeInfo) {
         val task = activeTask ?: return
         isReviewClicked = false
@@ -409,7 +426,6 @@ class WorkflowEngine : AccessibilityService() {
         updateNotification("💳 Payment Selected")
     }
 
-    // 🎯 FIND NODE with Partial Text Backup
     private fun findNodeFast(root: AccessibilityNodeInfo, labels: List<String>, viewId: String): AccessibilityNodeInfo? {
         if (viewId.isNotEmpty()) {
             val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
