@@ -19,12 +19,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner  // ✅ यह IMPORT सही है
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.vmax.sniper.core.engine.WorkflowEngine
 import com.vmax.sniper.core.model.*
 
@@ -182,7 +182,7 @@ fun VmaxVIPScreen() {
         Text("Precision Refresh | Tatkal Optimized", color = Color(0xFF4CAF50), fontSize = 12.sp)
         Spacer(modifier = Modifier.height(20.dp))
 
-        // ==================== ACCESSIBILITY STATUS ====================
+        // ACCESSIBILITY STATUS
         Button(
             onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
             modifier = Modifier.fillMaxWidth(),
@@ -192,7 +192,7 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(12.dp))
 
-        // ==================== LATENCY CARD ====================
+        // LATENCY CARD
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Text("⚡ TIMING OPTIMIZATION", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
@@ -209,7 +209,7 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(12.dp))
 
-        // ==================== JOURNEY DETAILS ====================
+        // JOURNEY DETAILS
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("🚂 JOURNEY DETAILS", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
@@ -224,7 +224,7 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(12.dp))
 
-        // ==================== CLASS & QUOTA ====================
+        // CLASS & QUOTA
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("🎯 CLASS & QUOTA", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
@@ -254,7 +254,7 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(12.dp))
 
-        // ==================== PASSENGERS ====================
+        // PASSENGERS
         Text("👥 PASSENGERS (Adult)", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.align(Alignment.Start))
         passengers.forEachIndexed { index, p ->
             Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF2A2A35)), modifier = Modifier.padding(vertical = 6.dp).fillMaxWidth()) {
@@ -287,7 +287,7 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(12.dp))
 
-        // ==================== CHILDREN ====================
+        // CHILDREN
         Text("👶 INFANTS (Optional)", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.align(Alignment.Start))
         children.forEachIndexed { index, c ->
             Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF2A2A35)), modifier = Modifier.padding(vertical = 4.dp).fillMaxWidth()) {
@@ -310,7 +310,7 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(12.dp))
 
-        // ==================== BOOKING OPTIONS ====================
+        // BOOKING OPTIONS
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("⚙️ BOOKING OPTIONS", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
@@ -349,7 +349,7 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(12.dp))
 
-        // ==================== COACH & MOBILE ====================
+        // COACH & MOBILE
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("📱 COACH & MOBILE", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
@@ -369,7 +369,7 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(12.dp))
 
-        // ==================== PAYMENT ====================
+        // PAYMENT
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("💳 PAYMENT METHOD", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
@@ -410,12 +410,12 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(20.dp))
 
-        // ==================== FIRING TIME INFO ====================
+        // FIRING TIME INFO
         val targetHour = if (listOf("1A", "2A", "3A", "CC", "3E", "EC").contains(selectedClass)) 10 else 11
         Text(text = "🎯 SNIPER WILL FIRE AT $targetHour:00:00", color = Color(0xFFFF9800), fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(modifier = Modifier.height(12.dp))
 
-        // ==================== ARM BUTTON ====================
+        // ARM BUTTON
         Button(
             onClick = {
                 if (!isEnabled) {
