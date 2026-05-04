@@ -6,13 +6,13 @@ import java.util.UUID
 
 @Parcelize
 data class SniperTask(
-    val taskId: String = UUID.randomUUID().toString(),
-    val triggerTime: String = "10:00:00",      // ✅ Default, MainActivity override करेगी
-    val msAdvance: Int = 150,                  // ✅ Default 150ms
-    val trainNumber: String = "",
+    val taskId: String = UUID.randomUUID().toString(),  // ✅ ADDED
+    val triggerTime: String = "10:00:00",
+    val msAdvance: Int = 150,
+    val trainNumber: String = "",                        // ✅ ADDED
     val travelClass: TravelClass = TravelClass.SLEEPER,
-    val quota: Quota = Quota.TATKAL,
-    val journeyDate: String = "",
+    val quota: Quota = Quota.TATKAL,                     // ✅ ADDED
+    val journeyDate: String = "",                        // ✅ ADDED
     val passengers: List<PassengerData> = listOf(PassengerData()),
     val children: List<ChildData> = emptyList(),
     val bookingOption: BookingOption = BookingOption.NONE,
