@@ -20,6 +20,8 @@ import androidx.core.app.NotificationCompat
 import com.vmax.sniper.core.model.*
 import com.vmax.sniper.core.network.TimeSniper
 import com.vmax.sniper.core.network.TimeSyncManager
+// ✅ FIX: Added missing import
+import com.vmax.sniper.core.engine.CaptchaSolver
 import kotlinx.coroutines.*
 import kotlin.math.min
 import kotlin.random.Random
@@ -160,7 +162,7 @@ class WorkflowEngine : AccessibilityService() {
         } finally { root.recycle() }
     }
 
-    // ==================== 🚀 MAIN ENGINE (Fixed) ====================
+    // ==================== 🚀 MAIN ENGINE ====================
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!isArmed || isProcessing) return
         val root = rootInActiveWindow ?: return
@@ -173,7 +175,6 @@ class WorkflowEngine : AccessibilityService() {
         serviceScope.launch {
             isProcessing = true
             try {
-                // ✅ FIX 1: Fresh root for each operation
                 val currentRoot = rootInActiveWindow ?: return@launch
                 
                 // 1. Popup Clearer
@@ -231,7 +232,7 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // ==================== 🎯 WATCHDOG (Faster) ====================
+    // ==================== 🎯 WATCHDOG ====================
     private fun startWatchdog() {
         watchdogJob?.cancel()
         watchdogJob = serviceScope.launch {
@@ -240,7 +241,6 @@ class WorkflowEngine : AccessibilityService() {
                 val root = rootInActiveWindow
                 if (root != null && root.packageName == IRCTC.PKG) {
                     
-                    // ✅ FIX 2: Retry if Continue button still visible
                     val proceedBtn = findNodeFast(root, listOf("Continue", "अभी बुक करें"), IRCTC.PROCEED_BTN)
                     if (proceedBtn != null && proceedBtn.isVisibleToUser && retryCount < 3) {
                         retryCount++
@@ -251,7 +251,6 @@ class WorkflowEngine : AccessibilityService() {
                         retryCount = 0
                     }
                     
-                    // Payment Page Detection
                     if (root.findAccessibilityNodeInfosByViewId(IRCTC.PAYMENT_CARDS).isNotEmpty()) {
                         Log.d(TAG, "🎯 Payment Page Detected by Watchdog!")
                         isReviewClicked = false
@@ -262,7 +261,6 @@ class WorkflowEngine : AccessibilityService() {
                         return@launch
                     }
                     
-                    // Captcha Detection
                     val captchaInput = root.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_INPUT)
                     if (captchaInput.isNotEmpty() && activeTask?.captchaAutofill == true) {
                         val captchaImage = root.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_IMAGE)
@@ -273,7 +271,7 @@ class WorkflowEngine : AccessibilityService() {
                     }
                 }
                 try { root?.recycle() } catch (e: Exception) {}
-                delay(100)  // ✅ FIX 3: 250ms → 100ms
+                delay(100)
             }
         }
     }
@@ -294,7 +292,6 @@ class WorkflowEngine : AccessibilityService() {
         val task = activeTask ?: return
         var currentRoot = rootInActiveWindow ?: return
         
-        // 👤 ADULTS
         val nameFields = currentRoot.findAccessibilityNodeInfosByViewId(IRCTC.NAME_INPUT)
         for (i in currentPassengerIndex until min(nameFields.size, task.passengers.size)) {
             val passenger = task.passengers[i]
@@ -324,7 +321,6 @@ class WorkflowEngine : AccessibilityService() {
             currentPassengerIndex = i + 1
         }
 
-        // 👶 CHILDREN
         for (child in task.children) {
             findNodeFast(currentRoot, listOf("Add Infant", "शिशु जोड़ें"), IRCTC.ADD_CHILD_BTN)?.let {
                 humanClickFast(it)
@@ -336,11 +332,9 @@ class WorkflowEngine : AccessibilityService() {
             if (child.gender.isNotBlank()) selectSpinnerFast(currentRoot, IRCTC.CHILD_GENDER, child.gender)
         }
 
-        // ⚙️ ADVANCED OPTIONS
         awaitAdvanceOptionsFast()
         awaitCoachAndMobileFast()
         
-        // 🚀 PROCEED
         mediumDelay()
         currentRoot = rootInActiveWindow ?: return
         findNodeFast(currentRoot, listOf("Review Journey Details", "Continue", "अभी बुक करें"), IRCTC.PROCEED_BTN)?.let {
@@ -446,7 +440,6 @@ class WorkflowEngine : AccessibilityService() {
 
     // ==================== 🛠️ HELPER FUNCTIONS ====================
     
-    // ✅ FIX 4: Human Click Speed (40-80ms)
     private fun humanClickFast(node: AccessibilityNodeInfo) {
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
@@ -455,7 +448,7 @@ class WorkflowEngine : AccessibilityService() {
         val path = Path().apply { moveTo(finalX, finalY) }
         
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, Random.nextLong(40, 80)))  // ✅ Slower
+            .addStroke(GestureDescription.StrokeDescription(path, 0, Random.nextLong(40, 80)))
             .build()
         dispatchGesture(gesture, null, null)
     }
@@ -477,19 +470,16 @@ class WorkflowEngine : AccessibilityService() {
     }
 
     private fun findNodeFast(root: AccessibilityNodeInfo, labels: List<String>, viewId: String): AccessibilityNodeInfo? {
-        // Priority 1: View ID (Fastest)
         if (viewId.isNotEmpty()) {
             val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
             if (nodes.isNotEmpty() && nodes[0].isVisibleToUser) return nodes[0]
         }
-        // Priority 2: Text Labels
         for (label in labels) {
             val nodes = root.findAccessibilityNodeInfosByText(label)
             for (node in nodes) {
                 if (node.isVisibleToUser && (node.isClickable || node.parent?.isClickable == true)) return node
             }
         }
-        // Priority 3: Partial Text Match
         for (label in labels) {
             val nodes = root.findAccessibilityNodeInfosByText("")
             for (node in nodes) {
