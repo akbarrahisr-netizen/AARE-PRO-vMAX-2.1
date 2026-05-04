@@ -12,6 +12,8 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
@@ -30,6 +32,7 @@ class WorkflowEngine : AccessibilityService() {
         private const val TAG = "VMAX_Sniper"
         const val ACTION_START_SNIPER = "com.vmax.sniper.START_SNIPER"
         const val EXTRA_TASK = "extra_task"
+        const val ACTION_SERVICE_STOPPED = "com.vmax.sniper.SERVICE_STOPPED"
         
         object IRCTC {
             const val PKG = "cris.org.in.prs.ima"
@@ -91,10 +94,27 @@ class WorkflowEngine : AccessibilityService() {
     private var currentPassengerIndex = 0
     private var watchdogJob: Job? = null
     private var isReviewClicked = false
+    private var lastActionTime = 0L
 
-    private suspend fun fastDelay() = delay(Random.nextLong(80, 150))
-    private suspend fun mediumDelay() = delay(Random.nextLong(250, 400))
-    private suspend fun addDelay() = delay(Random.nextLong(150, 250))
+    // ✅ Optimized delays for Tatkal
+    private suspend fun fastDelay() = delay(Random.nextLong(30, 60))
+    private suspend fun mediumDelay() = delay(Random.nextLong(80, 150))
+    private suspend fun addDelay() = delay(Random.nextLong(60, 100))
+
+    // ==================== 🎯 WAIT FOR NODE ====================
+    private suspend fun waitForNode(viewId: String, timeoutMs: Long = 5000): AccessibilityNodeInfo? {
+        val startTime = System.currentTimeMillis()
+        while (System.currentTimeMillis() - startTime < timeoutMs) {
+            val root = rootInActiveWindow ?: continue
+            val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
+            if (nodes.isNotEmpty() && nodes[0].isVisibleToUser) {
+                return nodes[0]
+            }
+            root.recycle()
+            delay(100)
+        }
+        return null
+    }
 
     // ==================== 🎯 POPUP SELECTION ====================
     private suspend fun selectPopupOption(spinnerId: String, optionText: String): Boolean {
@@ -105,7 +125,7 @@ class WorkflowEngine : AccessibilityService() {
         mediumDelay()
         
         var retry = 0
-        while (retry < 8) {
+        while (retry < 6) {
             root = rootInActiveWindow ?: return false
             val optionNode = findNodeFast(root, listOf(optionText), "")
             if (optionNode != null) {
@@ -114,7 +134,7 @@ class WorkflowEngine : AccessibilityService() {
                 Log.d(TAG, "✅ Selected: $optionText")
                 return true
             }
-            delay(200)
+            delay(150)
             retry++
         }
         return false
@@ -144,7 +164,7 @@ class WorkflowEngine : AccessibilityService() {
                 val dayNode = findNodeFast(calRoot, listOf(day), "")
                 dayNode?.let {
                     humanClickFast(it)
-                    delay(200)
+                    delay(150)
                     findNodeFast(calRoot, emptyList(), IRCTC.CAL_OK_BTN)?.let { ok ->
                         humanClickFast(ok)
                         Log.d(TAG, "✅ Date selected: $targetDate")
@@ -155,7 +175,7 @@ class WorkflowEngine : AccessibilityService() {
             } else {
                 findNodeFast(calRoot, emptyList(), IRCTC.CAL_NEXT_MONTH)?.let { next ->
                     humanClickFast(next)
-                    delay(300)
+                    delay(250)
                 }
             }
             calRoot.recycle()
@@ -208,8 +228,10 @@ class WorkflowEngine : AccessibilityService() {
         isProcessing = false
         currentPassengerIndex = 0
         watchdogJob?.cancel()
+        lastActionTime = 0
     }
 
+    // ==================== 🎯 REFRESH WITH WAIT ====================
     private fun triggerPreciseRefresh() {
         val root = rootInActiveWindow ?: return
         try {
@@ -220,24 +242,44 @@ class WorkflowEngine : AccessibilityService() {
 
     private suspend fun selectSpecificClassAfterRefresh() {
         val task = activeTask ?: return
-        delay(150)
-        val root = rootInActiveWindow ?: return
-        val classNode = findNodeFast(root, listOf(task.travelClass.code), "")
-        if (classNode?.isClickable == true) {
-            humanClickFast(classNode)
-            mediumDelay()
-            findNodeFast(root, listOf("Book Now", "अभी बुक करें"), IRCTC.BOOK_NOW_BTN)?.let { humanClickFast(it) }
+        
+        var classNode: AccessibilityNodeInfo? = null
+        repeat(20) {
+            if (classNode != null) return@repeat
+            val root = rootInActiveWindow ?: return@repeat
+            classNode = findNodeFast(root, listOf(task.travelClass.code), "")
+            root.recycle()
+            delay(150)
+        }
+        
+        classNode?.let {
+            if (it.isClickable) {
+                humanClickFast(it)
+                mediumDelay()
+                findNodeFast(rootInActiveWindow ?: return, listOf("Book Now", "अभी बुक करें"), IRCTC.BOOK_NOW_BTN)?.let { btn ->
+                    humanClickFast(btn)
+                }
+            }
         }
     }
 
+    // ==================== 🎯 onAccessibilityEvent with Event Filtering ====================
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (!isArmed || isProcessing) return
+        // Battle-Proof: Event Filtering
+        if (!isArmed || isProcessing || event == null) return
+        
+        // Only process relevant event types
+        val type = event.eventType
+        if (type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED && 
+            type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            type != AccessibilityEvent.TYPE_VIEW_CLICKED &&
+            type != AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) return
+        
+        // Only process IRCTC package
+        val packageName = event.packageName?.toString() ?: return
+        if (packageName != IRCTC.PKG) return
+        
         val eventRoot = rootInActiveWindow ?: return
-
-        if (eventRoot.packageName != IRCTC.PKG) {
-            eventRoot.recycle()
-            return
-        }
 
         serviceScope.launch {
             isProcessing = true
@@ -267,7 +309,15 @@ class WorkflowEngine : AccessibilityService() {
                 if (captchaInput.isNotEmpty() && activeTask?.captchaAutofill == true) {
                     val captchaImage = root.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_IMAGE)
                     if (captchaImage.isNotEmpty()) {
-                        CaptchaSolver.executeBypass(this@WorkflowEngine, captchaImage[0], captchaInput[0])
+                        if (isCaptchaImageLoaded(captchaImage[0])) {
+                            CaptchaSolver.executeBypass(this@WorkflowEngine, captchaImage[0], captchaInput[0])
+                        } else {
+                            Log.w(TAG, "Captcha image not loaded yet, waiting...")
+                            delay(500)
+                            if (captchaImage[0].isVisibleToUser) {
+                                CaptchaSolver.executeBypass(this@WorkflowEngine, captchaImage[0], captchaInput[0])
+                            }
+                        }
                     }
                     return@launch
                 }
@@ -277,6 +327,9 @@ class WorkflowEngine : AccessibilityService() {
                     humanClickFast(it)
                     updateNotification("✅ Booking Submitted!")
                     isArmed = false
+                    android.support.v4.content.LocalBroadcastManager.getInstance(this@WorkflowEngine).sendBroadcast(
+                        Intent(ACTION_SERVICE_STOPPED)
+                    )
                 }
                 
             } catch (e: Exception) {
@@ -289,9 +342,22 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
+    private fun isCaptchaImageLoaded(node: AccessibilityNodeInfo): Boolean {
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        return bounds.width() > 50 && bounds.height() > 20 && (node.contentDescription != null || node.isVisibleToUser)
+    }
+
     private suspend fun handlePopups(root: AccessibilityNodeInfo): Boolean {
         val okButton = findNodeFast(root, listOf("OK", "ठीक है", "YES", "हाँ"), "")
         if (okButton != null && okButton.isClickable) {
+            val parentText = okButton.parent?.text?.toString()?.lowercase() ?: ""
+            if (parentText.contains("session") && parentText.contains("expired")) {
+                Log.w(TAG, "⚠️ Session Expired Detected! Alerting user...")
+                vibrateDevice()
+                updateNotification("⚠️ Session Expired! Please login manually.")
+                return true
+            }
             humanClickFast(okButton)
             fastDelay()
             return true
@@ -299,11 +365,25 @@ class WorkflowEngine : AccessibilityService() {
         return false
     }
 
+    private fun vibrateDevice() {
+        val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator?.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator?.vibrate(500)
+        }
+    }
+
+    // ==================== 🎯 WATCHDOG ====================
     private fun startWatchdog() {
         watchdogJob?.cancel()
         watchdogJob = serviceScope.launch {
             var retryCount = 0
-            while (isArmed && isReviewClicked) {
+            val startTime = System.currentTimeMillis()
+            val globalTimeout = 15000L
+            
+            while (isArmed && isReviewClicked && (System.currentTimeMillis() - startTime) < globalTimeout) {
                 val root = rootInActiveWindow
                 if (root != null && root.packageName == IRCTC.PKG) {
                     val isReviewPage = findNodeFast(root, listOf("Review Journey", "Review"), "") != null
@@ -313,7 +393,7 @@ class WorkflowEngine : AccessibilityService() {
                         if (proceedBtn?.isVisibleToUser == true && retryCount < 3) {
                             retryCount++
                             humanClickFast(proceedBtn)
-                            delay(200)
+                            delay(150)
                         }
                     } else {
                         retryCount = 0
@@ -337,7 +417,15 @@ class WorkflowEngine : AccessibilityService() {
                     }
                 }
                 try { root?.recycle() } catch (e: Exception) {}
-                delay(150)
+                delay(100)
+            }
+            
+            if (System.currentTimeMillis() - startTime >= globalTimeout && isReviewClicked) {
+                Log.w(TAG, "⚠️ Global timeout reached, attempting recovery...")
+                performGlobalAction(GLOBAL_ACTION_BACK)
+                delay(500)
+                isReviewClicked = false
+                isProcessing = false
             }
         }
     }
@@ -354,10 +442,11 @@ class WorkflowEngine : AccessibilityService() {
                 }
                 root.recycle()
             }
-            delay(150)
+            delay(100)
         }
     }
 
+    // ==================== 🚀 SUPER FAST FILL ====================
     private suspend fun fillAllDetailsSuperFast() {
         val task = activeTask ?: return
         var currentRoot = rootInActiveWindow ?: return
@@ -434,40 +523,47 @@ class WorkflowEngine : AccessibilityService() {
         findNodeFast(currentRoot, listOf("Review Journey", "Continue"), IRCTC.PROCEED_BTN)?.let {
             humanClickFast(it)
             isReviewClicked = true
+            lastActionTime = System.currentTimeMillis()
             startWatchdog()
             updateNotification("🔄 Waiting for Queue...")
         }
     }
 
+    // ==================== 🎯 ADVANCED OPTIONS ====================
     private suspend fun awaitAdvanceOptionsFast() {
         val task = activeTask ?: return
         val root = rootInActiveWindow ?: return
         
         if (task.autoUpgradation) {
-            findNodeFast(root, emptyList(), IRCTC.AUTO_UPGRADE_CHECK)?.let { 
-                if (!it.isChecked) humanClickFast(it)
-                fastDelay()
-            }
+            setCheckboxWithRetry(root, IRCTC.AUTO_UPGRADE_CHECK, true)
         }
         if (task.confirmBerthsOnly) {
-            findNodeFast(root, emptyList(), IRCTC.CONFIRM_BERTH_CHECK)?.let { 
-                if (!it.isChecked) humanClickFast(it)
-                fastDelay()
-            }
+            setCheckboxWithRetry(root, IRCTC.CONFIRM_BERTH_CHECK, true)
         }
         if (task.insurance) {
-            findNodeFast(root, emptyList(), IRCTC.INSURANCE_YES)?.let { 
-                if (!it.isChecked) humanClickFast(it)
-            }
+            setCheckboxWithRetry(root, IRCTC.INSURANCE_YES, true)
         } else {
-            findNodeFast(root, emptyList(), IRCTC.INSURANCE_NO)?.let { 
-                if (!it.isChecked) humanClickFast(it)
-            }
+            setCheckboxWithRetry(root, IRCTC.INSURANCE_NO, true)
         }
         fastDelay()
         
         if (task.bookingOption.value > 0) {
             selectPopupOption(IRCTC.BOOKING_OPT_SPINNER, task.bookingOption.display)
+        }
+    }
+
+    private suspend fun setCheckboxWithRetry(root: AccessibilityNodeInfo, viewId: String, targetChecked: Boolean) {
+        val checkbox = findNodeFast(root, emptyList(), viewId) ?: return
+        var retry = 0
+        while (retry < 3 && checkbox.isChecked != targetChecked) {
+            humanClickFast(checkbox)
+            delay(100)
+            retry++
+        }
+        if (checkbox.isChecked == targetChecked) {
+            Log.d(TAG, "✅ Checkbox toggled successfully: $viewId")
+        } else {
+            Log.w(TAG, "⚠️ Checkbox toggle may have failed: $viewId")
         }
     }
 
@@ -518,50 +614,77 @@ class WorkflowEngine : AccessibilityService() {
 
     // ==================== 🛠️ OPTIMIZED findNodeFast ====================
     private fun findNodeFast(root: AccessibilityNodeInfo, labels: List<String>, viewId: String): AccessibilityNodeInfo? {
+        // Priority 1: View ID (Fastest)
         if (viewId.isNotEmpty()) {
-            val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
-            for (node in nodes) {
-                if (node.isVisibleToUser) return node
-            }
+            root.findAccessibilityNodeInfosByViewId(viewId).firstOrNull { it.isVisibleToUser }?.let { return it }
         }
         
+        // Priority 2: Exact Match
         for (label in labels) {
-            val nodes = root.findAccessibilityNodeInfosByText(label)
-            for (node in nodes) {
-                if (node.isVisibleToUser) return node
-            }
+            root.findAccessibilityNodeInfosByText(label).firstOrNull { 
+                it.text?.toString()?.trim().equals(label, ignoreCase = true) && it.isVisibleToUser 
+            }?.let { return it }
         }
         
-        return findNodeRecursive(root, labels.map { it.uppercase() })
+        // Priority 3: Recursive Search (Memory Optimized)
+        return findNodeRecursiveOptimized(root, labels.map { it.uppercase() }, 0)
     }
 
-    private fun findNodeRecursive(node: AccessibilityNodeInfo, targetTexts: List<String>): AccessibilityNodeInfo? {
-        val nodeText = node.text?.toString()?.uppercase() ?: ""
-        val nodeDesc = node.contentDescription?.toString()?.uppercase() ?: ""
+    // ✅ MEMORY OPTIMIZED: Recursive search with proper recycling
+    private fun findNodeRecursiveOptimized(node: AccessibilityNodeInfo, targetTexts: List<String>, depth: Int = 0): AccessibilityNodeInfo? {
+        if (depth > 15) return null
         
-        if (targetTexts.any { nodeText.contains(it) || nodeDesc.contains(it) }) {
-            if (node.isVisibleToUser) return node
+        val nodeText = node.text?.toString()?.trim()?.uppercase() ?: ""
+        val nodeDesc = node.contentDescription?.toString()?.trim()?.uppercase() ?: ""
+        
+        // Check if current node matches
+        if (targetTexts.any { nodeText == it || nodeDesc == it || nodeText.contains(it) || nodeDesc.contains(it) }) {
+            if (node.isVisibleToUser) {
+                // ✅ Found node - return without recycling
+                return node
+            }
         }
         
+        // Search children
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            val found = findNodeRecursive(child, targetTexts)
-            if (found != null) return found
+            val found = findNodeRecursiveOptimized(child, targetTexts, depth + 1)
+            if (found != null) {
+                // ✅ Found in child - return immediately, do NOT recycle child here
+                return found
+            }
+            // ✅ Child not needed - recycle immediately to prevent memory leak
             child.recycle()
         }
         return null
     }
 
     private fun humanClickFast(node: AccessibilityNodeInfo) {
-        val bounds = Rect()
-        node.getBoundsInScreen(bounds)
-        val finalX = bounds.centerX().toFloat()
-        val finalY = bounds.centerY().toFloat()
-        val path = Path().apply { moveTo(finalX, finalY) }
-        val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, Random.nextLong(60, 100)))
-            .build()
-        dispatchGesture(gesture, null, null)
+        if (node.isClickable) {
+            val bounds = Rect()
+            node.getBoundsInScreen(bounds)
+            val finalX = bounds.centerX().toFloat()
+            val finalY = bounds.centerY().toFloat()
+            val path = Path().apply { moveTo(finalX, finalY) }
+            val gesture = GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(path, 0, Random.nextLong(30, 50)))
+                .build()
+            dispatchGesture(gesture, null, null)
+        } else {
+            node.parent?.let { parent ->
+                if (parent.isClickable) {
+                    val bounds = Rect()
+                    parent.getBoundsInScreen(bounds)
+                    val finalX = bounds.centerX().toFloat()
+                    val finalY = bounds.centerY().toFloat()
+                    val path = Path().apply { moveTo(finalX, finalY) }
+                    val gesture = GestureDescription.Builder()
+                        .addStroke(GestureDescription.StrokeDescription(path, 0, Random.nextLong(30, 50)))
+                        .build()
+                    dispatchGesture(gesture, null, null)
+                }
+            }
+        }
     }
 
     private fun setTextFast(node: AccessibilityNodeInfo, text: String) {
@@ -589,7 +712,11 @@ class WorkflowEngine : AccessibilityService() {
     }
 
     override fun onInterrupt() { resetEngineState() }
-    override fun onDestroy() { serviceScope.cancel(); super.onDestroy() }
+    override fun onDestroy() { 
+        watchdogJob?.cancel()
+        serviceScope.cancel() 
+        super.onDestroy()
+    }
 }
 
 fun isAccessibilityServiceEnabled(context: Context): Boolean {
