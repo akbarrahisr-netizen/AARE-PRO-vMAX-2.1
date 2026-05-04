@@ -15,6 +15,7 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.clickable  // ✅ यह IMPORT जोड़ें
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -42,7 +43,7 @@ import java.util.Calendar
 
 class MainActivity : ComponentActivity() {
     
-    // ✅ Broadcast Receiver for Service State Updates
+    // Broadcast Receiver for Service State Updates
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == WorkflowEngine.ACTION_SERVICE_STOPPED) {
@@ -56,7 +57,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // ✅ Fix 1: Android 13+ Notification Permission
+        // Fix 1: Android 13+ Notification Permission
         val permissions = mutableListOf(
             Manifest.permission.RECEIVE_SMS,
             Manifest.permission.READ_SMS
@@ -66,7 +67,7 @@ class MainActivity : ComponentActivity() {
         }
         ActivityCompat.requestPermissions(this, permissions.toTypedArray(), 101)
         
-        // ✅ Register Broadcast Receiver
+        // Register Broadcast Receiver
         LocalBroadcastManager.getInstance(this).registerReceiver(
             stateReceiver,
             IntentFilter(WorkflowEngine.ACTION_SERVICE_STOPPED)
@@ -156,7 +157,7 @@ fun VmaxVIPScreen() {
         mutableStateOf(sharedPrefs.getBoolean("SNIPER_RUNNING", false))
     }
     
-    // ✅ Fix 2: Check Battery Optimization on resume
+    // Fix 2: Check Battery Optimization on resume
     var isBatteryOptimizationIgnored by remember { mutableStateOf(false) }
     
     DisposableEffect(lifecycleOwner) {
@@ -244,7 +245,7 @@ fun VmaxVIPScreen() {
         modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("🎯 VMAX SNIPER PRO", color = Color(0xFF7E57C2), fontSize = 28.sp, fontWeight = FontWeight.Bold)
+        Text("VMAX SNIPER PRO", color = Color(0xFF7E57C2), fontSize = 28.sp, fontWeight = FontWeight.Bold)
         Text("Precision Refresh | Tatkal Optimized", color = Color(0xFF4CAF50), fontSize = 12.sp)
         Spacer(modifier = Modifier.height(20.dp))
 
@@ -253,25 +254,27 @@ fun VmaxVIPScreen() {
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = if (isEnabled) Color(0xFF2E7D32) else Color.DarkGray)
         ) {
-            Text(if (isEnabled) "✅ Accessibility Service ON" else "⚠️ Enable Accessibility Service")
+            Text(if (isEnabled) "Accessibility Service ON" else "Enable Accessibility Service")
         }
         Spacer(modifier = Modifier.height(12.dp))
         
-        // ✅ Fix 1: Battery Optimization Warning
+        // ✅ FIX: यहाँ clickable सही तरीके से उपयोग किया गया है
         if (!isBatteryOptimizationIgnored) {
             Card(
-                modifier = Modifier.fillMaxWidth().clickable {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                            data = Uri.parse("package:${context.packageName}")
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {  // ✅ अब यह काम करेगा क्योंकि हमने import किया है
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                data = Uri.parse("package:${context.packageName}")
+                            }
+                            context.startActivity(intent)
                         }
-                        context.startActivity(intent)
-                    }
-                },
+                    },
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFB71C1C))
             ) {
                 Text(
-                    "⚠️ Battery Optimization Active! Tap to disable for better performance",
+                    "Battery Optimization Active! Tap to disable for better performance",
                     color = Color.White,
                     modifier = Modifier.padding(12.dp),
                     fontSize = 12.sp
@@ -282,7 +285,7 @@ fun VmaxVIPScreen() {
 
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp)) {
-                Text("⚡ TIMING OPTIMIZATION", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
+                Text("TIMING OPTIMIZATION", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = latency,
@@ -301,7 +304,7 @@ fun VmaxVIPScreen() {
 
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("🚂 JOURNEY DETAILS", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
+                Text("JOURNEY DETAILS", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
                 
                 OutlinedTextField(value = trainNumber, onValueChange = { if (it.length <= 5 && it.all { c -> c.isDigit() }) trainNumber = it },
                     label = { Text("Train Number (5 digits)") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
@@ -328,7 +331,7 @@ fun VmaxVIPScreen() {
 
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("🎯 CLASS & QUOTA", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
+                Text("CLASS & QUOTA", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
                 
                 ExposedDropdownMenuBox(expanded = expandedClass, onExpandedChange = { expandedClass = it }) {
                     OutlinedTextField(value = selectedClass, onValueChange = {}, readOnly = true, label = { Text("Target Class") }, 
@@ -355,7 +358,7 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(12.dp))
 
-        Text("👥 PASSENGERS (Adult)", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.align(Alignment.Start))
+        Text("PASSENGERS (Adult)", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.align(Alignment.Start))
         passengers.forEachIndexed { index, p ->
             Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF2A2A35)), modifier = Modifier.padding(vertical = 6.dp).fillMaxWidth()) {
                 Column(modifier = Modifier.padding(10.dp)) {
@@ -388,7 +391,7 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(12.dp))
 
-        Text("👶 INFANTS (Optional)", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.align(Alignment.Start))
+        Text("INFANTS (Optional)", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.align(Alignment.Start))
         children.forEachIndexed { index, c ->
             Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF2A2A35)), modifier = Modifier.padding(vertical = 4.dp).fillMaxWidth()) {
                 Column(modifier = Modifier.padding(10.dp)) {
@@ -412,7 +415,7 @@ fun VmaxVIPScreen() {
 
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp)) {
-                Text("⚙️ BOOKING OPTIONS", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
+                Text("BOOKING OPTIONS", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) { 
                         Checkbox(checked = autoUpgradation, onCheckedChange = { autoUpgradation = it })
@@ -447,7 +450,7 @@ fun VmaxVIPScreen() {
 
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp)) {
-                Text("📱 COACH & MOBILE", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
+                Text("COACH & MOBILE", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
                 Row(verticalAlignment = Alignment.CenterVertically) { 
                     Checkbox(checked = coachPreferred, onCheckedChange = { coachPreferred = it })
                     Text("Coach Preferred")
@@ -465,7 +468,7 @@ fun VmaxVIPScreen() {
 
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp)) {
-                Text("💳 PAYMENT METHOD", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
+                Text("PAYMENT METHOD", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
                 ExposedDropdownMenuBox(expanded = expandedPayment, onExpandedChange = { expandedPayment = it }) {
                     OutlinedTextField(value = paymentCategory.display, onValueChange = {}, readOnly = true, 
                         label = { Text("Payment Category") }, 
@@ -491,39 +494,39 @@ fun VmaxVIPScreen() {
         Spacer(modifier = Modifier.height(20.dp))
 
         val targetHour = if (listOf("1A", "2A", "3A", "CC", "3E", "EC").contains(selectedClass)) 10 else 11
-        Text(text = "🎯 SNIPER WILL FIRE AT $targetHour:00:00", color = Color(0xFFFF9800), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Text(text = "SNIPER WILL FIRE AT $targetHour:00:00", color = Color(0xFFFF9800), fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(modifier = Modifier.height(12.dp))
 
-        // ✅ ARM/STOP Button with state persistence
+        // ARM/STOP Button with state persistence
         Button(
             onClick = {
                 if (isSniperRunning) {
                     isSniperRunning = false
                     sharedPrefs.edit().putBoolean("SNIPER_RUNNING", false).apply()
-                    Toast.makeText(context, "🛑 Sniper Stopped!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Sniper Stopped!", Toast.LENGTH_SHORT).show()
                     return@Button
                 }
                 
                 if (!isEnabled) {
-                    Toast.makeText(context, "⚠️ Enable Accessibility Service first!", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Enable Accessibility Service first!", Toast.LENGTH_LONG).show()
                     return@Button
                 }
                 if (trainNumber.length != 5 || !trainNumber.all { it.isDigit() }) {
-                    Toast.makeText(context, "❌ Train number must be 5 digits!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Train number must be 5 digits!", Toast.LENGTH_SHORT).show()
                     return@Button
                 }
                 if (!isValidDate(journeyDate)) {
-                    Toast.makeText(context, "❌ Invalid journey date! Use DD-MM-YYYY format", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Invalid journey date! Use DD-MM-YYYY format", Toast.LENGTH_SHORT).show()
                     return@Button
                 }
                 if (mobileNo.isNotBlank() && mobileNo.length != 10) {
-                    Toast.makeText(context, "⚠️ Mobile number must be 10 digits!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Mobile number must be 10 digits!", Toast.LENGTH_SHORT).show()
                     return@Button
                 }
                 
                 val validPassengers = passengers.filter { it.name.isNotBlank() && it.age.isNotBlank() }
                 if (validPassengers.isEmpty()) {
-                    Toast.makeText(context, "❌ Fill at least one passenger with Name & Age!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Fill at least one passenger with Name & Age!", Toast.LENGTH_SHORT).show()
                     return@Button
                 }
                 
@@ -574,7 +577,7 @@ fun VmaxVIPScreen() {
                     context.startService(intent)
                 }
                 isSniperRunning = true
-                Toast.makeText(context, "🚀 SNIPER ARMED for $targetHour:00:00!", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "SNIPER ARMED for $targetHour:00:00!", Toast.LENGTH_LONG).show()
             },
             modifier = Modifier.fillMaxWidth().height(65.dp),
             colors = ButtonDefaults.buttonColors(
@@ -582,7 +585,7 @@ fun VmaxVIPScreen() {
             )
         ) {
             Text(
-                if (isSniperRunning) "🛑 STOP SNIPER" else "🔥 ARM THE SNIPER", 
+                if (isSniperRunning) "STOP SNIPER" else "ARM THE SNIPER", 
                 fontWeight = FontWeight.Bold, 
                 fontSize = 20.sp
             )
