@@ -23,7 +23,12 @@ object CaptchaSolver {
         captchaInputNode: AccessibilityNodeInfo
     ) {
         if (isSolving) return
+        
+        // ✅ FIX: Wait for image to load completely (as shown in your photo)
+        Thread.sleep(200)  // 200ms delay for image load
+        
         isSolving = true
+        Log.d(TAG, "🔍 Captcha Detected! Solving...")
 
         val bounds = Rect()
         captchaImageNode.getBoundsInScreen(bounds)
@@ -48,6 +53,9 @@ object CaptchaSolver {
                                 Log.e(TAG, "Crop Error: ${e.message}")
                                 isSolving = false
                             }
+                        } else {
+                            Log.e(TAG, "Bitmap is null")
+                            isSolving = false
                         }
                     }
                     override fun onFailure(errorCode: Int) {
@@ -57,21 +65,36 @@ object CaptchaSolver {
                 }
             )
         } else {
+            Log.e(TAG, "Screenshot API requires Android 11+")
             isSolving = false
         }
     }
 
     private fun processImageAndFill(bitmap: Bitmap, inputNode: AccessibilityNodeInfo) {
         val image = InputImage.fromBitmap(bitmap, 0)
+        
         recognizer.process(image)
             .addOnSuccessListener { visionText ->
                 val solvedText = visionText.text.replace(Regex("[^a-zA-Z0-9]"), "").trim()
+                Log.d(TAG, "🎯 Captcha Solved: $solvedText")
+                
                 if (solvedText.isNotEmpty()) {
                     fillTextField(inputNode, solvedText)
+                    Log.d(TAG, "✅ Captcha filled successfully")
+                } else {
+                    Log.w(TAG, "⚠️ AI could not read Captcha")
                 }
-                Thread { Thread.sleep(2000); isSolving = false }.start()
+                
+                // Reset solving flag after 2 seconds
+                Thread {
+                    Thread.sleep(2000)
+                    isSolving = false
+                }.start()
             }
-            .addOnFailureListener { isSolving = false }
+            .addOnFailureListener { e ->
+                Log.e(TAG, "❌ ML Kit OCR Failed: ${e.message}")
+                isSolving = false
+            }
     }
 
     private fun fillTextField(node: AccessibilityNodeInfo, text: String) {
