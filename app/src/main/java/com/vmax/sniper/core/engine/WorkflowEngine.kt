@@ -96,12 +96,12 @@ class WorkflowEngine : AccessibilityService() {
     private var isReviewClicked = false
     private var lastActionTime = 0L
 
-    // ✅ Optimized delays for Tatkal
+    // Optimized delays for Tatkal
     private suspend fun fastDelay() = delay(Random.nextLong(30, 60))
     private suspend fun mediumDelay() = delay(Random.nextLong(80, 150))
     private suspend fun addDelay() = delay(Random.nextLong(60, 100))
 
-    // ==================== 🎯 WAIT FOR NODE ====================
+    // ==================== WAIT FOR NODE ====================
     private suspend fun waitForNode(viewId: String, timeoutMs: Long = 5000): AccessibilityNodeInfo? {
         val startTime = System.currentTimeMillis()
         while (System.currentTimeMillis() - startTime < timeoutMs) {
@@ -116,7 +116,7 @@ class WorkflowEngine : AccessibilityService() {
         return null
     }
 
-    // ==================== 🎯 POPUP SELECTION ====================
+    // ==================== POPUP SELECTION ====================
     private suspend fun selectPopupOption(spinnerId: String, optionText: String): Boolean {
         var root = rootInActiveWindow ?: return false
         val spinner = findNodeFast(root, emptyList(), spinnerId) ?: return false
@@ -131,7 +131,7 @@ class WorkflowEngine : AccessibilityService() {
             if (optionNode != null) {
                 humanClickFast(optionNode)
                 mediumDelay()
-                Log.d(TAG, "✅ Selected: $optionText")
+                Log.d(TAG, "Selected: $optionText")
                 return true
             }
             delay(150)
@@ -140,7 +140,7 @@ class WorkflowEngine : AccessibilityService() {
         return false
     }
 
-    // ==================== 🎯 CALENDAR SELECTION ====================
+    // ==================== CALENDAR SELECTION ====================
     private suspend fun selectDateWithCalendar(targetDate: String) {
         val parts = targetDate.split("-")
         val day = parts[0].toInt().toString()
@@ -167,7 +167,7 @@ class WorkflowEngine : AccessibilityService() {
                     delay(150)
                     findNodeFast(calRoot, emptyList(), IRCTC.CAL_OK_BTN)?.let { ok ->
                         humanClickFast(ok)
-                        Log.d(TAG, "✅ Date selected: $targetDate")
+                        Log.d(TAG, "Date selected: $targetDate")
                     }
                 }
                 calRoot.recycle()
@@ -191,7 +191,7 @@ class WorkflowEngine : AccessibilityService() {
             notificationTimeout = 10
         }
         createNotificationChannel()
-        startForeground(1, buildNotification("🎯 VMAX Sniper Ready"))
+        startForeground(1, buildNotification("VMAX Sniper Ready"))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -215,7 +215,7 @@ class WorkflowEngine : AccessibilityService() {
                         }
                     }
                 }
-                updateNotification("⏳ Waiting for ${activeTask!!.triggerTime}")
+                updateNotification("Waiting for ${activeTask!!.triggerTime}")
             }
         }
         return START_STICKY
@@ -231,7 +231,7 @@ class WorkflowEngine : AccessibilityService() {
         lastActionTime = 0
     }
 
-    // ==================== 🎯 REFRESH WITH WAIT ====================
+    // ==================== REFRESH WITH WAIT ====================
     private fun triggerPreciseRefresh() {
         val root = rootInActiveWindow ?: return
         try {
@@ -263,7 +263,7 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // ==================== 🎯 onAccessibilityEvent with Event Filtering ====================
+    // ==================== onAccessibilityEvent with Event Filtering ====================
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         // Battle-Proof: Event Filtering
         if (!isArmed || isProcessing || event == null) return
@@ -325,7 +325,7 @@ class WorkflowEngine : AccessibilityService() {
                 val payBtn = findNodeFast(root, listOf("PAY", "PROCEED", "CONTINUE", "PROCEED TO PAY", "भुगतान"), IRCTC.PROCEED_BTN)
                 payBtn?.let {
                     humanClickFast(it)
-                    updateNotification("✅ Booking Submitted!")
+                    updateNotification("Booking Submitted!")
                     isArmed = false
                     android.support.v4.content.LocalBroadcastManager.getInstance(this@WorkflowEngine).sendBroadcast(
                         Intent(ACTION_SERVICE_STOPPED)
@@ -353,9 +353,9 @@ class WorkflowEngine : AccessibilityService() {
         if (okButton != null && okButton.isClickable) {
             val parentText = okButton.parent?.text?.toString()?.lowercase() ?: ""
             if (parentText.contains("session") && parentText.contains("expired")) {
-                Log.w(TAG, "⚠️ Session Expired Detected! Alerting user...")
+                Log.w(TAG, "Session Expired Detected! Alerting user...")
                 vibrateDevice()
-                updateNotification("⚠️ Session Expired! Please login manually.")
+                updateNotification("Session Expired! Please login manually.")
                 return true
             }
             humanClickFast(okButton)
@@ -375,7 +375,7 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // ==================== 🎯 WATCHDOG ====================
+    // ==================== WATCHDOG ====================
     private fun startWatchdog() {
         watchdogJob?.cancel()
         watchdogJob = serviceScope.launch {
@@ -421,7 +421,7 @@ class WorkflowEngine : AccessibilityService() {
             }
             
             if (System.currentTimeMillis() - startTime >= globalTimeout && isReviewClicked) {
-                Log.w(TAG, "⚠️ Global timeout reached, attempting recovery...")
+                Log.w(TAG, "Global timeout reached, attempting recovery...")
                 performGlobalAction(GLOBAL_ACTION_BACK)
                 delay(500)
                 isReviewClicked = false
@@ -446,7 +446,7 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // ==================== 🚀 SUPER FAST FILL ====================
+    // ==================== SUPER FAST FILL ====================
     private suspend fun fillAllDetailsSuperFast() {
         val task = activeTask ?: return
         var currentRoot = rootInActiveWindow ?: return
@@ -525,11 +525,11 @@ class WorkflowEngine : AccessibilityService() {
             isReviewClicked = true
             lastActionTime = System.currentTimeMillis()
             startWatchdog()
-            updateNotification("🔄 Waiting for Queue...")
+            updateNotification("Waiting for Queue...")
         }
     }
 
-    // ==================== 🎯 ADVANCED OPTIONS ====================
+    // ==================== ADVANCED OPTIONS ====================
     private suspend fun awaitAdvanceOptionsFast() {
         val task = activeTask ?: return
         val root = rootInActiveWindow ?: return
@@ -561,9 +561,9 @@ class WorkflowEngine : AccessibilityService() {
             retry++
         }
         if (checkbox.isChecked == targetChecked) {
-            Log.d(TAG, "✅ Checkbox toggled successfully: $viewId")
+            Log.d(TAG, "Checkbox toggled successfully: $viewId")
         } else {
-            Log.w(TAG, "⚠️ Checkbox toggle may have failed: $viewId")
+            Log.w(TAG, "Checkbox toggle may have failed: $viewId")
         }
     }
 
@@ -609,10 +609,10 @@ class WorkflowEngine : AccessibilityService() {
         val proceedBtn = findNodeFast(root, listOf("Continue", "Proceed"), IRCTC.PROCEED_BTN)
             ?: findNodeFast(root, listOf("Continue", "Proceed to Pay"), "")
         proceedBtn?.let { humanClickFast(it) }
-        updateNotification("💳 Payment Selected")
+        updateNotification("Payment Selected")
     }
 
-    // ==================== 🛠️ OPTIMIZED findNodeFast ====================
+    // ==================== OPTIMIZED findNodeFast ====================
     private fun findNodeFast(root: AccessibilityNodeInfo, labels: List<String>, viewId: String): AccessibilityNodeInfo? {
         // Priority 1: View ID (Fastest)
         if (viewId.isNotEmpty()) {
@@ -630,7 +630,7 @@ class WorkflowEngine : AccessibilityService() {
         return findNodeRecursiveOptimized(root, labels.map { it.uppercase() }, 0)
     }
 
-    // ✅ MEMORY OPTIMIZED: Recursive search with proper recycling
+    // MEMORY OPTIMIZED: Recursive search with proper recycling
     private fun findNodeRecursiveOptimized(node: AccessibilityNodeInfo, targetTexts: List<String>, depth: Int = 0): AccessibilityNodeInfo? {
         if (depth > 15) return null
         
@@ -640,7 +640,7 @@ class WorkflowEngine : AccessibilityService() {
         // Check if current node matches
         if (targetTexts.any { nodeText == it || nodeDesc == it || nodeText.contains(it) || nodeDesc.contains(it) }) {
             if (node.isVisibleToUser) {
-                // ✅ Found node - return without recycling
+                // Found node - return without recycling
                 return node
             }
         }
@@ -650,10 +650,10 @@ class WorkflowEngine : AccessibilityService() {
             val child = node.getChild(i) ?: continue
             val found = findNodeRecursiveOptimized(child, targetTexts, depth + 1)
             if (found != null) {
-                // ✅ Found in child - return immediately, do NOT recycle child here
+                // Found in child - return immediately, do NOT recycle child here
                 return found
             }
-            // ✅ Child not needed - recycle immediately to prevent memory leak
+            // Child not needed - recycle immediately to prevent memory leak
             child.recycle()
         }
         return null
@@ -692,6 +692,7 @@ class WorkflowEngine : AccessibilityService() {
         node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 
+    // ==================== NOTIFICATION FUNCTIONS (FIXED) ====================
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
             val channel = NotificationChannel("vmax_channel", "VMAX Sniper", NotificationManager.IMPORTANCE_LOW)
@@ -699,19 +700,25 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    private fun buildNotification(content: String) = NotificationCompat.Builder(this, "vmax_channel")
-        .setContentTitle("🎯 VMAX Sniper")
-        .setContentText(content)
+    private fun buildNotification(message: String) = NotificationCompat.Builder(this, "vmax_channel")
+        .setContentTitle("VMAX Sniper")
+        .setContentText(message)
         .setSmallIcon(android.R.drawable.ic_dialog_info)
         .setOngoing(true)
         .build()
 
-    private fun updateNotification(content: String) {
-        getSystemService(NotificationManager::class.java).notify(1, buildNotification(content))
-        Log.d(TAG, content)
+    private fun updateNotification(message: String) {
+        try {
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager.notify(1, buildNotification(message))
+            Log.d(TAG, message)
+        } catch (e: Exception) {
+            Log.e(TAG, "Notification error: ${e.message}")
+        }
     }
 
     override fun onInterrupt() { resetEngineState() }
+    
     override fun onDestroy() { 
         watchdogJob?.cancel()
         serviceScope.cancel() 
