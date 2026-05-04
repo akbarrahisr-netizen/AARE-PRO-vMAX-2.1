@@ -481,19 +481,19 @@ class WorkflowEngine : AccessibilityService() {
     }
 
     private fun findNodeFast(root: AccessibilityNodeInfo, labels: List<String>, viewId: String): AccessibilityNodeInfo? {
-        // ✅ Priority 1: View ID (Fastest)
+        // Priority 1: View ID (Fastest)
         if (viewId.isNotEmpty()) {
             val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
             if (nodes.isNotEmpty() && nodes[0].isVisibleToUser) return nodes[0]
         }
-        // ✅ Priority 2: Text Labels
+        // Priority 2: Text Labels
         for (label in labels) {
             val nodes = root.findAccessibilityNodeInfosByText(label)
             for (node in nodes) {
                 if (node.isVisibleToUser && (node.isClickable || node.parent?.isClickable == true)) return node
             }
         }
-        // ✅ Priority 3: Partial Text Match (for dynamic amounts like "PROCEED TO PAY ₹623.15")
+        // Priority 3: Partial Text Match
         for (label in labels) {
             val nodes = root.findAccessibilityNodeInfosByText("")
             for (node in nodes) {
