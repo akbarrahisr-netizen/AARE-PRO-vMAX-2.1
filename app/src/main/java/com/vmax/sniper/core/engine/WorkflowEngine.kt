@@ -29,8 +29,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.random.Random
 
 /**
- * VMAX SNIPER - ULTIMATE MERGED VERSION
- * तीनों वर्जन की बेस्ट चीज़ें | फर्स्ट-विनर लॉक | पैरेलल अटैक | स्टेबल
+ * VMAX SNIPER - ULTIMATE MERGED PRO VERSION
+ * स्टेट मशीन | पैरेलल अटैक | फर्स्ट-विनर लॉक | एंटी-डिटेक्शन | मेमोरी सेफ
  */
 class WorkflowEngine : AccessibilityService() {
 
@@ -78,6 +78,13 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
+    // ==================== STATE MACHINE ====================
+    enum class EngineState {
+        IDLE, REFRESH, ATTACK, FORM, CAPTCHA, PAYMENT, DONE
+    }
+    private var currentState = EngineState.IDLE
+    private var lastStateTransition = 0L
+
     // ==================== VARIABLES ====================
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val isProcessing = AtomicBoolean(false)
@@ -86,7 +93,27 @@ class WorkflowEngine : AccessibilityService() {
     private var hasRefreshed = false
     private var isReviewClicked = false
     private var lastEventTime = 0L
+    private var lastWindowHash = 0
     private val clipboard: ClipboardManager by lazy { getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
+
+    // ==================== HELPERS ====================
+    private inline fun <T> withRoot(block: (AccessibilityNodeInfo) -> T?): T? {
+        val root = rootInActiveWindow ?: return null
+        return try { block(root) } finally { root.recycle() }
+    }
+
+    private fun transitionTo(newState: EngineState) {
+        val now = System.currentTimeMillis()
+        if (now - lastStateTransition < 100) return
+        Log.d(TAG, "📍 State: $currentState → $newState")
+        currentState = newState
+        lastStateTransition = now
+    }
+
+    private fun isState(expected: EngineState): Boolean = currentState == expected
+
+    private suspend fun humanDelay() = delay(Random.nextLong(8, 18))
+    private suspend fun adaptiveDelay() = delay(Random.nextLong(5, 15))
 
     // ==================== SERVICE LIFECYCLE ====================
     override fun onServiceConnected() {
@@ -121,10 +148,12 @@ class WorkflowEngine : AccessibilityService() {
                     TimeSyncManager.syncTime()
                     TimeSniper.scheduleFire(targetHour, advanceMs) {
                         isArmed = true
+                        transitionTo(EngineState.REFRESH)
                         serviceScope.launch {
                             if (!hasRefreshed) {
                                 triggerPreciseRefresh()
                                 hasRefreshed = true
+                                transitionTo(EngineState.ATTACK)
                             }
                         }
                     }
@@ -140,31 +169,41 @@ class WorkflowEngine : AccessibilityService() {
         hasRefreshed = false
         isReviewClicked = false
         lastEventTime = 0
+        lastWindowHash = 0
         AttackLock.reset()
+        transitionTo(EngineState.IDLE)
         Log.d(TAG, "🔄 Engine Reset")
     }
 
     private fun triggerPreciseRefresh() {
-        val root = rootInActiveWindow ?: return
-        try {
+        withRoot { root ->
             val refreshBtn = findNodeFast(root, listOf("Search", "Refresh"), IRCTC.SEARCH_BTN)
             if (refreshBtn?.isClickable == true) {
                 stableClick(refreshBtn)
                 Log.d(TAG, "🔥 Refresh Triggered")
             }
-        } finally { root.recycle() }
+        }
     }
 
-    // ==================== NODE SEARCH ====================
+    // ==================== OPTIMIZED NODE SEARCH ====================
     fun findNodeFast(root: AccessibilityNodeInfo, labels: List<String>, viewId: String): AccessibilityNodeInfo? {
+        // Priority 1: View ID
         if (viewId.isNotEmpty()) {
             root.findAccessibilityNodeInfosByViewId(viewId).firstOrNull { it.isVisibleToUser }?.let { return it }
         }
+        // Priority 2: Exact Text
         for (label in labels) {
             root.findAccessibilityNodeInfosByText(label).firstOrNull { 
                 it.text?.toString()?.trim().equals(label, ignoreCase = true) && it.isVisibleToUser 
             }?.let { return it }
         }
+        // Priority 3: Partial Text
+        for (label in labels) {
+            root.findAccessibilityNodeInfosByText(label).firstOrNull { 
+                it.text?.toString()?.trim().contains(label, ignoreCase = true) && it.isVisibleToUser 
+            }?.let { return it }
+        }
+        // Priority 4: BFS (Last Resort)
         return findNodeBFS(root, labels.map { it.uppercase() })
     }
 
@@ -192,13 +231,23 @@ class WorkflowEngine : AccessibilityService() {
 
     // ==================== DIRECT NODE ACCESS ====================
     private fun findNodeDirect(viewId: String): AccessibilityNodeInfo? {
-        val root = rootInActiveWindow ?: return null
-        return root.findAccessibilityNodeInfosByViewId(viewId).firstOrNull { it.isVisibleToUser }
+        return withRoot { root ->
+            root.findAccessibilityNodeInfosByViewId(viewId).firstOrNull { it.isVisibleToUser }
+        }
     }
     
     private fun findNodeDirectByText(text: String): AccessibilityNodeInfo? {
-        val root = rootInActiveWindow ?: return null
-        return root.findAccessibilityNodeInfosByText(text).firstOrNull { it.isVisibleToUser }
+        return withRoot { root ->
+            root.findAccessibilityNodeInfosByText(text).firstOrNull { it.isVisibleToUser }
+        }
+    }
+
+    // ==================== EVENT DEDUPLICATION ====================
+    private fun isDuplicateWindow(root: AccessibilityNodeInfo): Boolean {
+        val hash = root.hashCode()
+        if (hash == lastWindowHash) return true
+        lastWindowHash = hash
+        return false
     }
 
     // ==================== MAIN EVENT HANDLER ====================
@@ -221,16 +270,17 @@ class WorkflowEngine : AccessibilityService() {
             try {
                 val targetHour = if (activeTask?.triggerTime?.startsWith("10") == true) 10 else 11
                 
-                // Check for final pay button
+                // Check for final pay button (Highest Priority)
                 if (handleFinalPay()) return@launch
                 
                 // AC Attack (10 AM)
-                if (targetHour == 10 && hasRefreshed && !isReviewClicked) {
+                if (targetHour == 10 && isState(EngineState.ATTACK) && !isReviewClicked) {
                     val success = parallelAttackWithLock(TrainPriorityManager.getAcAttackOrder(), isAc = true)
                     if (success) {
+                        transitionTo(EngineState.FORM)
                         fillPassengerFormUltraFast()
                     } else {
-                        delay(30)
+                        delay(50)
                         AttackLock.reset()
                         parallelAttackWithLock(TrainPriorityManager.getAcAttackOrder(), isAc = true)
                         fillPassengerFormUltraFast()
@@ -239,12 +289,13 @@ class WorkflowEngine : AccessibilityService() {
                 }
                 
                 // Sleeper Attack (11 AM)
-                if (targetHour == 11 && hasRefreshed && !isReviewClicked) {
+                if (targetHour == 11 && isState(EngineState.ATTACK) && !isReviewClicked) {
                     val success = parallelAttackWithLock(TrainPriorityManager.getSleeperAttackOrder(), isAc = false)
                     if (success) {
+                        transitionTo(EngineState.FORM)
                         fillPassengerFormUltraFast()
                     } else {
-                        delay(30)
+                        delay(50)
                         AttackLock.reset()
                         parallelAttackWithLock(TrainPriorityManager.getSleeperAttackOrder(), isAc = false)
                         fillPassengerFormUltraFast()
@@ -253,15 +304,22 @@ class WorkflowEngine : AccessibilityService() {
                 }
                 
                 // Captcha Handling
-                if (isReviewClicked) {
+                if (isReviewClicked && isState(EngineState.CAPTCHA)) {
                     handleCaptcha()
                     return@launch
                 }
                 
                 // Payment Handling
-                if (handlePaymentPage()) {
-                    selectPaymentUltraFast()
+                if (isState(EngineState.PAYMENT)) {
+                    if (handlePaymentPage()) {
+                        selectPaymentUltraFast()
+                    }
                     return@launch
+                }
+                
+                // Auto state transition based on UI
+                if (isReviewClicked && currentState != EngineState.CAPTCHA && currentState != EngineState.PAYMENT) {
+                    transitionTo(EngineState.CAPTCHA)
                 }
                 
             } catch (e: Exception) {
@@ -299,7 +357,8 @@ class WorkflowEngine : AccessibilityService() {
             }
         }
         
-        val success = withTimeoutOrNull(150L) { winnerDeferred.await() } ?: false
+        // ✅ Increased timeout for IRCTC UI latency (350ms)
+        val success = withTimeoutOrNull(350L) { winnerDeferred.await() } ?: false
         attackJobs.forEach { it.cancel() }
         
         if (success) Log.d(TAG, "🔥 FIRST SUCCESSFUL HIT!")
@@ -310,20 +369,20 @@ class WorkflowEngine : AccessibilityService() {
         train: TrainPriorityManager.TrainTarget,
         className: String
     ): Boolean {
-        if (!isActive || AttackLock.isLocked()) return false
+        // ✅ No isLocked() check - only tryLock (prevents race condition)
+        if (!isActive) return false
         
-        val root = rootInActiveWindow ?: return false
-        
-        try {
+        return withRoot { root ->
             val trainNode = findNodeFast(root, listOf(train.trainNumber), "")
-                ?: return false
+                ?: return@withRoot false
             
             val classNode = findNodeFast(trainNode, listOf(className), "")
-                ?: return false
+                ?: return@withRoot false
             
             if (isClassAvailable(classNode)) {
+                // ✅ Only tryLock - atomic operation
                 if (!AttackLock.tryLock(train.trainNumber, className)) {
-                    return false
+                    return@withRoot false
                 }
                 
                 Log.d(TAG, "🎯 LOCKED: ${train.trainName} - $className")
@@ -335,26 +394,29 @@ class WorkflowEngine : AccessibilityService() {
                 )
                 
                 if (bookBtn != null && bookBtn.isClickable) {
-                    return stableClick(bookBtn)
+                    return@withRoot stableClick(bookBtn)
                 }
             }
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Attack failed: ${e.message}")
-        } finally {
-            root.recycle()
-        }
-        
-        return false
+            false
+        } ?: false
     }
     
+    // ✅ ENHANCED AVAILABILITY CHECK
     private fun isClassAvailable(classNode: AccessibilityNodeInfo): Boolean {
         val text = classNode.text?.toString()?.lowercase() ?: return false
+        
+        // Available
         if (text.contains("available") || text.contains("avail")) return true
+        
+        // RAC is also good
+        if (text.contains("rac")) return true
+        
+        // WL check
         if (text.contains("wl")) {
             val wlNumber = extractWaitListNumber(text)
             return wlNumber < 15
         }
+        
         return false
     }
     
@@ -373,14 +435,13 @@ class WorkflowEngine : AccessibilityService() {
     // ==================== FAST FORM FILL ====================
     private suspend fun fillPassengerFormUltraFast() {
         val task = activeTask ?: return
-        
         val passengers = task.passengers.take(4)
         
         for ((index, passenger) in passengers.withIndex()) {
             if (index > 0) {
                 val addBtn = findNodeDirect(IRCTC.ADD_PASSENGER_BTN)
                 addBtn?.let { stableClick(it) }
-                delay(10)
+                adaptiveDelay()
             }
             
             val nameField = findNodeDirect(IRCTC.NAME_INPUT)
@@ -392,7 +453,7 @@ class WorkflowEngine : AccessibilityService() {
             if (passenger.gender.isNotBlank()) {
                 selectGenderFast(passenger.gender)
             }
-            delay(8)
+            adaptiveDelay()
         }
         
         selectInsuranceFast(task.insurance)
@@ -403,7 +464,7 @@ class WorkflowEngine : AccessibilityService() {
         val spinner = findNodeDirect(IRCTC.GENDER_SPINNER)
         spinner?.let {
             stableClick(it)
-            delay(10)
+            adaptiveDelay()
             val option = findNodeDirectByText(gender)
             option?.let { stableClick(it) }
         }
@@ -423,6 +484,7 @@ class WorkflowEngine : AccessibilityService() {
         proceedBtn?.let { 
             stableClick(it)
             isReviewClicked = true
+            transitionTo(EngineState.CAPTCHA)
             Log.d(TAG, "📋 Proceed to Review")
         }
     }
@@ -436,6 +498,7 @@ class WorkflowEngine : AccessibilityService() {
             if (captchaInput.text.isNullOrBlank()) {
                 Log.d(TAG, "🔐 Solving Captcha...")
                 CaptchaSolver.executeBypass(this, captchaImage, captchaInput)
+                transitionTo(EngineState.PAYMENT)
             }
         }
     }
@@ -453,7 +516,7 @@ class WorkflowEngine : AccessibilityService() {
         var paymentNode = findNodeDirect(IRCTC.PAYMENT_UPI_APPS)
         if (paymentNode != null) {
             stableClick(paymentNode)
-            delay(20)
+            adaptiveDelay()
             selectUPIAppFast()
             return
         }
@@ -462,7 +525,7 @@ class WorkflowEngine : AccessibilityService() {
         paymentNode = findNodeDirect(IRCTC.PAYMENT_BHIM_UPI)
         if (paymentNode != null) {
             stableClick(paymentNode)
-            delay(20)
+            adaptiveDelay()
             selectUPIAppFast()
             return
         }
@@ -471,7 +534,7 @@ class WorkflowEngine : AccessibilityService() {
         paymentNode = findNodeDirect(IRCTC.PAYMENT_CARDS)
         paymentNode?.let { stableClick(it) }
         
-        delay(30)
+        humanDelay()
         val proceedBtn = findNodeDirect(IRCTC.PROCEED_BTN)
         proceedBtn?.let { stableClick(it) }
     }
@@ -491,13 +554,18 @@ class WorkflowEngine : AccessibilityService() {
         firstApp?.let { stableClick(it) }
     }
     
+    // ✅ IMPROVED FINAL PAY DETECTION
     private suspend fun handleFinalPay(): Boolean {
         val payBtn = findNodeDirect(IRCTC.PROCEED_BTN)
         if (payBtn != null && payBtn.isClickable) {
             val text = payBtn.text?.toString()?.lowercase() ?: ""
-            if (text.contains("pay") || text.contains("proceed") || text.contains("भुगतान")) {
+            // ✅ Better detection: Check for ₹ symbol or specific pay text
+            if ((text.contains("pay") && text.contains("₹")) || 
+                text.contains("proceed") || 
+                text.contains("भुगतान")) {
                 stableClick(payBtn)
                 updateNotification("✅ BOOKING SUCCESSFUL!")
+                transitionTo(EngineState.DONE)
                 isArmed = false
                 LocalBroadcastManager.getInstance(this).sendBroadcast(Intent(ACTION_SERVICE_STOPPED))
                 return true
@@ -536,7 +604,7 @@ class WorkflowEngine : AccessibilityService() {
             dispatchGesture(longPressGesture, null, null)
             
             serviceScope.launch {
-                delay(50)
+                humanDelay()
                 val pasteBtn = findNodeDirectByText("Paste")
                 pasteBtn?.let { stableClick(it) }
             }
