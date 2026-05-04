@@ -20,8 +20,6 @@ import androidx.core.app.NotificationCompat
 import com.vmax.sniper.core.model.*
 import com.vmax.sniper.core.network.TimeSniper
 import com.vmax.sniper.core.network.TimeSyncManager
-// ✅ FIX: Added missing import
-import com.vmax.sniper.core.engine.CaptchaSolver
 import kotlinx.coroutines.*
 import kotlin.math.min
 import kotlin.random.Random
@@ -76,10 +74,9 @@ class WorkflowEngine : AccessibilityService() {
     private var watchdogJob: Job? = null
     private var isReviewClicked = false
 
-    // ==================== FAST DELAYS ====================
-    private suspend fun fastDelay() = delay(Random.nextLong(30, 70))
-    private suspend fun mediumDelay() = delay(Random.nextLong(60, 120))
-    private suspend fun addDelay() = delay(Random.nextLong(80, 150))
+    private suspend fun fastDelay() = delay(Random.nextLong(100, 200))
+    private suspend fun mediumDelay() = delay(Random.nextLong(300, 500))
+    private suspend fun addDelay() = delay(Random.nextLong(200, 350))
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -90,8 +87,7 @@ class WorkflowEngine : AccessibilityService() {
             notificationTimeout = 10
         }
         createNotificationChannel()
-        startForeground(1, buildNotification("🎯 Super Fast Sniper Ready"))
-        Log.d(TAG, "VMAX Super Fast Sniper Connected")
+        startForeground(1, buildNotification("🎯 Sniper Ready"))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -104,20 +100,13 @@ class WorkflowEngine : AccessibilityService() {
             }
             if (activeTask != null) {
                 resetEngineState()
-                
                 val targetHour = if (activeTask!!.triggerTime.startsWith("10")) 10 else 11
                 val advanceMs = activeTask!!.msAdvance.toLong().coerceIn(100, 250)
-
                 TimeSniper.scheduleFire(targetHour, advanceMs) {
                     isArmed = true
-                    serviceScope.launch {
-                        if (!hasRefreshed) {
-                            triggerPreciseRefresh()
-                            hasRefreshed = true
-                        }
-                    }
+                    serviceScope.launch { if (!hasRefreshed) { triggerPreciseRefresh(); hasRefreshed = true } }
                 }
-                updateNotification("⏳ Waiting for ${activeTask!!.triggerTime} (Advance: ${advanceMs}ms)")
+                updateNotification("⏳ Waiting for ${activeTask!!.triggerTime}")
             }
         }
         return START_STICKY
@@ -135,104 +124,86 @@ class WorkflowEngine : AccessibilityService() {
     private fun triggerPreciseRefresh() {
         val root = rootInActiveWindow ?: return
         try {
-            val refreshBtn = findNodeFast(root, listOf("Search", "रिफ्रेश", "Refresh"), IRCTC.SEARCH_BTN)
-            if (refreshBtn?.isClickable == true) {
-                humanClickFast(refreshBtn)
-                updateNotification("🔄 Refresh Triggered!")
-                Log.d(TAG, "Refresh clicked at ${System.currentTimeMillis()}")
-            }
+            val refreshBtn = findNodeFast(root, listOf("Search", "Refresh"), IRCTC.SEARCH_BTN)
+            if (refreshBtn?.isClickable == true) humanClickFast(refreshBtn)
         } finally { root.recycle() }
     }
 
+    // 🎯 SELECT SPECIFIC CLASS AFTER REFRESH (Filled)
     private suspend fun selectSpecificClassAfterRefresh() {
         val task = activeTask ?: return
-        delay(Random.nextLong(50, 100))
+        delay(150)
         val root = rootInActiveWindow ?: return
-        try {
-            val classNode = findNodeFast(root, listOf(task.travelClass.code), "")
-            if (classNode?.isClickable == true) {
-                humanClickFast(classNode)
-                Log.d(TAG, "Class selected: ${task.travelClass.code}")
-                mediumDelay()
-                findNodeFast(root, listOf("Book Now", "अभी बुक करें"), IRCTC.BOOK_NOW_BTN)?.let { 
-                    humanClickFast(it)
-                    Log.d(TAG, "Book Now clicked after class selection")
-                }
-            }
-        } finally { root.recycle() }
+        val classNode = findNodeFast(root, listOf(task.travelClass.code), "")
+        if (classNode?.isClickable == true) {
+            humanClickFast(classNode)
+            mediumDelay()
+            findNodeFast(root, listOf("Book Now", "अभी बुक करें"), IRCTC.BOOK_NOW_BTN)?.let { humanClickFast(it) }
+        }
     }
 
-    // ==================== 🚀 MAIN ENGINE ====================
+    // 🎯 RECYCLE SAFETY logic in Event Handler
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!isArmed || isProcessing) return
-        val root = rootInActiveWindow ?: return
+        val eventRoot = rootInActiveWindow ?: return
 
-        if (root.packageName != IRCTC.PKG) {
-            root.recycle()
+        if (eventRoot.packageName != IRCTC.PKG) {
+            eventRoot.recycle()
             return
         }
 
         serviceScope.launch {
             isProcessing = true
+            val freshRoot = rootInActiveWindow ?: return@launch
             try {
-                val currentRoot = rootInActiveWindow ?: return@launch
-                
-                // 1. Popup Clearer
-                findNodeFast(currentRoot, listOf("OK", "YES", "ठीक है", "हाँ"), "")?.let {
-                    humanClickFast(it)
-                    fastDelay()
-                    return@launch
-                }
+                if (handlePopups(freshRoot)) return@launch
 
-                // 2. Post-Refresh Class Selection
-                if (hasRefreshed && findNodeFast(currentRoot, listOf("SL", "3A", "2A"), "") != null && !isReviewClicked) {
+                if (hasRefreshed && findNodeFast(freshRoot, listOf("SL", "3A"), "") != null && !isReviewClicked) {
                     selectSpecificClassAfterRefresh()
                     findPassengerFormAndFill()
                     return@launch
                 }
 
-                // 3. Passenger Form Filling
-                if (!isReviewClicked && findNodeFast(currentRoot, listOf("Name"), IRCTC.NAME_INPUT) != null) {
+                if (!isReviewClicked && findNodeFast(freshRoot, listOf("Name"), IRCTC.NAME_INPUT) != null) {
                     fillAllDetailsSuperFast()
                     return@launch
                 }
                 
-                // 4. Payment Selection
-                if (currentRoot.findAccessibilityNodeInfosByViewId(IRCTC.PAYMENT_CARDS).isNotEmpty()) {
-                    selectPaymentFast(currentRoot)
+                if (freshRoot.findAccessibilityNodeInfosByViewId(IRCTC.PAYMENT_CARDS).isNotEmpty()) {
+                    selectPaymentFast(freshRoot)
                     return@launch
                 }
                 
-                // 5. Captcha Detection
-                val captchaInput = currentRoot.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_INPUT)
+                val captchaInput = freshRoot.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_INPUT)
                 if (captchaInput.isNotEmpty() && activeTask?.captchaAutofill == true) {
-                    val captchaImage = currentRoot.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_IMAGE)
-                    if (captchaImage.isNotEmpty()) {
-                        CaptchaSolver.executeBypass(this@WorkflowEngine, captchaImage[0], captchaInput[0])
-                    }
+                    val captchaImage = freshRoot.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_IMAGE)
+                    if (captchaImage.isNotEmpty()) CaptchaSolver.executeBypass(this@WorkflowEngine, captchaImage[0], captchaInput[0])
                     return@launch
                 }
                 
-                // 6. Final Book Now
-                findNodeFast(currentRoot, listOf("Book Now", "Proceed to Pay", "Pay"), IRCTC.BOOK_NOW_BTN)?.let {
+                findNodeFast(freshRoot, listOf("Book Now", "Pay"), IRCTC.BOOK_NOW_BTN)?.let {
                     humanClickFast(it)
-                    updateNotification("✅ Booking Submitted!")
                     isArmed = false
-                    watchdogJob?.cancel()
-                    return@launch
                 }
-                
-                if (isReviewClicked) return@launch
-            } catch (e: Exception) {
-                Log.e(TAG, "Event Error: ${e.message}")
-            } finally {
+            } catch (e: Exception) { Log.e(TAG, "Event Error: ${e.message}") } finally {
                 isProcessing = false
-                try { root.recycle() } catch (e: Exception) {}
+                try { freshRoot.recycle() } catch (e: Exception) {}
+                try { eventRoot.recycle() } catch (e: Exception) {}
             }
         }
     }
 
-    // ==================== 🎯 WATCHDOG ====================
+    private suspend fun handlePopups(root: AccessibilityNodeInfo): Boolean {
+        val okButton = findNodeFast(root, listOf("OK", "ठीक है", "YES"), "")
+        if (okButton != null && okButton.isClickable) {
+            humanClickFast(okButton)
+            fastDelay()
+            return true
+        }
+        return false
+    }
+
+    // 🎯 WATCHDOG with Screen Verification
     private fun startWatchdog() {
         watchdogJob?.cancel()
         watchdogJob = serviceScope.launch {
@@ -240,112 +211,34 @@ class WorkflowEngine : AccessibilityService() {
             while (isArmed && isReviewClicked) {
                 val root = rootInActiveWindow
                 if (root != null && root.packageName == IRCTC.PKG) {
-                    
-                    val proceedBtn = findNodeFast(root, listOf("Continue", "अभी बुक करें"), IRCTC.PROCEED_BTN)
-                    if (proceedBtn != null && proceedBtn.isVisibleToUser && retryCount < 3) {
-                        retryCount++
-                        Log.d(TAG, "🔄 Retry #$retryCount: Continue button still visible")
-                        humanClickFast(proceedBtn)
-                        delay(150)
-                    } else {
-                        retryCount = 0
-                    }
-                    
-                    if (root.findAccessibilityNodeInfosByViewId(IRCTC.PAYMENT_CARDS).isNotEmpty()) {
-                        Log.d(TAG, "🎯 Payment Page Detected by Watchdog!")
-                        isReviewClicked = false
-                        isProcessing = true
-                        selectPaymentFast(root)
-                        isProcessing = false
-                        watchdogJob?.cancel()
-                        return@launch
-                    }
-                    
-                    val captchaInput = root.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_INPUT)
-                    if (captchaInput.isNotEmpty() && activeTask?.captchaAutofill == true) {
-                        val captchaImage = root.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_IMAGE)
-                        if (captchaImage.isNotEmpty()) {
-                            Log.d(TAG, "🔐 Captcha Detected by Watchdog!")
-                            CaptchaSolver.executeBypass(this@WorkflowEngine, captchaImage[0], captchaInput[0])
+                    val isReviewPage = findNodeFast(root, listOf("Review Journey"), "") != null
+                    if (isReviewPage) {
+                        val proceedBtn = findNodeFast(root, listOf("Continue"), IRCTC.PROCEED_BTN)
+                        if (proceedBtn?.isVisibleToUser == true && retryCount < 3) {
+                            retryCount++; humanClickFast(proceedBtn); delay(200)
                         }
+                    }
+                    if (root.findAccessibilityNodeInfosByViewId(IRCTC.PAYMENT_CARDS).isNotEmpty()) {
+                        isReviewClicked = false; selectPaymentFast(root); watchdogJob?.cancel(); return@launch
                     }
                 }
                 try { root?.recycle() } catch (e: Exception) {}
-                delay(100)
+                delay(150)
             }
         }
     }
 
-    // ==================== 🚀 SUPER FAST FILL ====================
     private suspend fun findPassengerFormAndFill() {
-        repeat(10) {
+        repeat(5) {
             val root = rootInActiveWindow
             if (root != null && findNodeFast(root, listOf("Name"), IRCTC.NAME_INPUT) != null) {
-                fillAllDetailsSuperFast()
-                return
+                fillAllDetailsSuperFast(); return
             }
-            delay(100)
+            delay(200)
         }
     }
 
-    private suspend fun fillAllDetailsSuperFast() {
-        val task = activeTask ?: return
-        var currentRoot = rootInActiveWindow ?: return
-        
-        val nameFields = currentRoot.findAccessibilityNodeInfosByViewId(IRCTC.NAME_INPUT)
-        for (i in currentPassengerIndex until min(nameFields.size, task.passengers.size)) {
-            val passenger = task.passengers[i]
-            
-            if (i > 0) {
-                findNodeFast(currentRoot, listOf("Add New", "Add Passenger"), IRCTC.ADD_PASSENGER_BTN)?.let {
-                    humanClickFast(it)
-                    addDelay()
-                    currentRoot = rootInActiveWindow ?: return
-                }
-            }
-
-            findNodeFast(currentRoot, listOf("Name"), IRCTC.NAME_INPUT)?.let { setTextFast(it, passenger.name); fastDelay() }
-            findNodeFast(currentRoot, listOf("Age"), IRCTC.AGE_INPUT)?.let { setTextFast(it, passenger.age); fastDelay() }
-            
-            if (passenger.gender.isNotBlank()) selectSpinnerFast(currentRoot, IRCTC.GENDER_SPINNER, passenger.gender)
-            if (passenger.berthPreference != "No Preference") selectSpinnerFast(currentRoot, IRCTC.BERTH_SPINNER, passenger.berthPreference)
-            if (passenger.meal != "No Food") selectSpinnerFast(currentRoot, IRCTC.MEAL_SPINNER, passenger.meal)
-            
-            if (i > 0) {
-                findNodeFast(currentRoot, listOf("Save", "जोड़ें"), IRCTC.SAVE_BTN)?.let {
-                    humanClickFast(it)
-                    mediumDelay()
-                    currentRoot = rootInActiveWindow ?: return
-                }
-            }
-            currentPassengerIndex = i + 1
-        }
-
-        for (child in task.children) {
-            findNodeFast(currentRoot, listOf("Add Infant", "शिशु जोड़ें"), IRCTC.ADD_CHILD_BTN)?.let {
-                humanClickFast(it)
-                addDelay()
-                currentRoot = rootInActiveWindow ?: return
-            }
-            findNodeFast(currentRoot, listOf("Infant Name"), IRCTC.CHILD_NAME)?.let { setTextFast(it, child.name); fastDelay() }
-            if (child.ageRange.isNotBlank()) selectSpinnerFast(currentRoot, IRCTC.CHILD_AGE, child.ageRange)
-            if (child.gender.isNotBlank()) selectSpinnerFast(currentRoot, IRCTC.CHILD_GENDER, child.gender)
-        }
-
-        awaitAdvanceOptionsFast()
-        awaitCoachAndMobileFast()
-        
-        mediumDelay()
-        currentRoot = rootInActiveWindow ?: return
-        findNodeFast(currentRoot, listOf("Review Journey Details", "Continue", "अभी बुक करें"), IRCTC.PROCEED_BTN)?.let {
-            humanClickFast(it)
-            isReviewClicked = true
-            startWatchdog()
-            updateNotification("🔄 Waiting for IRCTC Queue...")
-            Log.d(TAG, "Proceed clicked, Watchdog started")
-        }
-    }
-
+    // 🎯 ADVANCE OPTIONS (Filled)
     private suspend fun awaitAdvanceOptionsFast() {
         val task = activeTask ?: return
         val root = rootInActiveWindow ?: return
@@ -374,29 +267,96 @@ class WorkflowEngine : AccessibilityService() {
         fastDelay()
         
         if (task.bookingOption.value > 0) {
-            selectSpinnerFast(root, IRCTC.BOOKING_OPT_SPINNER, task.bookingOption.display)
-        }
-    }
-    
-    private suspend fun awaitCoachAndMobileFast() {
-        val task = activeTask ?: return
-        val root = rootInActiveWindow ?: return
-        
-        if (task.coachPreferred && task.coachId.isNotBlank()) {
-            findNodeFast(root, emptyList(), IRCTC.COACH_PREF_INPUT)?.let { 
-                setTextFast(it, task.coachId.uppercase())
-                fastDelay()
-            }
-        }
-        if (task.mobileNo.isNotBlank()) {
-            findNodeFast(root, emptyList(), IRCTC.MOBILE_INPUT)?.let { 
-                setTextFast(it, task.mobileNo)
-                fastDelay()
-            }
+            selectSpinnerWithRetry(root, IRCTC.BOOKING_OPT_SPINNER, task.bookingOption.display)
         }
     }
 
-    // ==================== 💳 FAST PAYMENT ====================
+    // 🎯 MULTI-PASSENGER with Overwrite Check
+    private suspend fun fillAllDetailsSuperFast() {
+        val task = activeTask ?: return
+        var currentRoot = rootInActiveWindow ?: return
+        
+        val nameFields = currentRoot.findAccessibilityNodeInfosByViewId(IRCTC.NAME_INPUT)
+        for (i in currentPassengerIndex until min(nameFields.size, task.passengers.size)) {
+            val passenger = task.passengers[i]
+            if (i > 0) {
+                findNodeFast(currentRoot, listOf("Add New"), IRCTC.ADD_PASSENGER_BTN)?.let {
+                    humanClickFast(it); addDelay(); currentRoot = rootInActiveWindow ?: return
+                }
+            }
+
+            val nameField = findNodeFast(currentRoot, listOf("Name"), IRCTC.NAME_INPUT)
+            if (nameField != null && nameField.text.isNullOrBlank()) {
+                setTextFast(nameField, passenger.name); fastDelay()
+            }
+            
+            val ageField = findNodeFast(currentRoot, listOf("Age"), IRCTC.AGE_INPUT)
+            if (ageField != null && ageField.text.isNullOrBlank()) {
+                setTextFast(ageField, passenger.age); fastDelay()
+            }
+            
+            if (passenger.gender.isNotBlank()) selectSpinnerWithRetry(currentRoot, IRCTC.GENDER_SPINNER, passenger.gender)
+            if (passenger.berthPreference != "No Preference") selectSpinnerWithRetry(currentRoot, IRCTC.BERTH_SPINNER, passenger.berthPreference)
+            if (passenger.meal != "No Food") selectSpinnerWithRetry(currentRoot, IRCTC.MEAL_SPINNER, passenger.meal)
+            
+            if (i > 0) {
+                findNodeFast(currentRoot, listOf("Save"), IRCTC.SAVE_BTN)?.let {
+                    humanClickFast(it); addDelay(); currentRoot = rootInActiveWindow ?: return
+                }
+            }
+            currentPassengerIndex = i + 1
+        }
+
+        // Children
+        for (child in task.children) {
+            findNodeFast(currentRoot, listOf("Add Infant", "शिशु जोड़ें"), IRCTC.ADD_CHILD_BTN)?.let {
+                humanClickFast(it); addDelay(); currentRoot = rootInActiveWindow ?: return
+            }
+            findNodeFast(currentRoot, listOf("Infant Name"), IRCTC.CHILD_NAME)?.let { setTextFast(it, child.name); fastDelay() }
+            if (child.ageRange.isNotBlank()) selectSpinnerWithRetry(currentRoot, IRCTC.CHILD_AGE, child.ageRange)
+            if (child.gender.isNotBlank()) selectSpinnerWithRetry(currentRoot, IRCTC.CHILD_GENDER, child.gender)
+        }
+
+        awaitAdvanceOptionsFast()
+        
+        // Coach & Mobile
+        if (task.coachPreferred && task.coachId.isNotBlank()) {
+            findNodeFast(currentRoot, emptyList(), IRCTC.COACH_PREF_INPUT)?.let { 
+                setTextFast(it, task.coachId.uppercase()); fastDelay()
+            }
+        }
+        if (task.mobileNo.isNotBlank()) {
+            findNodeFast(currentRoot, emptyList(), IRCTC.MOBILE_INPUT)?.let { 
+                setTextFast(it, task.mobileNo); fastDelay()
+            }
+        }
+        
+        mediumDelay()
+        currentRoot = rootInActiveWindow ?: return
+        findNodeFast(currentRoot, listOf("Review Journey", "Continue"), IRCTC.PROCEED_BTN)?.let {
+            humanClickFast(it); isReviewClicked = true; startWatchdog()
+        }
+    }
+
+    // 🎯 SPINNER with Verification (Green Tick)
+    private suspend fun selectSpinnerWithRetry(root: AccessibilityNodeInfo, spinnerId: String, optionText: String): Boolean {
+        val spinner = findNodeFast(root, emptyList(), spinnerId) ?: return false
+        humanClickFast(spinner); delay(350)
+        
+        var retry = 0
+        while (retry < 5) {
+            val newRoot = rootInActiveWindow ?: return false
+            val optionNode = findNodeFast(newRoot, listOf(optionText), "")
+            if (optionNode != null) {
+                humanClickFast(optionNode); delay(150)
+                return true
+            }
+            delay(150); retry++
+        }
+        return false
+    }
+
+    // 🎯 PAYMENT SELECTION
     private suspend fun selectPaymentFast(root: AccessibilityNodeInfo) {
         val task = activeTask ?: return
         isReviewClicked = false
@@ -404,52 +364,75 @@ class WorkflowEngine : AccessibilityService() {
         
         when (task.payment.category) {
             PaymentCategory.CARDS_NETBANKING -> {
-                findNodeFast(root, emptyList(), IRCTC.PAYMENT_CARDS)?.let { humanClickFast(it) }
+                var node = findNodeFast(root, emptyList(), IRCTC.PAYMENT_CARDS)
+                if (node == null) node = findNodeFast(root, listOf("Cards", "Netbanking"), "")
+                node?.let { humanClickFast(it) }
             }
             PaymentCategory.BHIM_UPI -> {
-                findNodeFast(root, emptyList(), IRCTC.PAYMENT_BHIM_UPI)?.let { humanClickFast(it) }
+                var node = findNodeFast(root, emptyList(), IRCTC.PAYMENT_BHIM_UPI)
+                if (node == null) node = findNodeFast(root, listOf("BHIM/UPI", "UPI"), "")
+                node?.let { humanClickFast(it) }
             }
             PaymentCategory.E_WALLETS -> {
-                findNodeFast(root, emptyList(), IRCTC.PAYMENT_EWALLET)?.let { 
-                    humanClickFast(it)
-                    mediumDelay()
-                    findNodeFast(root, listOf(task.payment.walletType.display), "")?.let { opt -> humanClickFast(opt) }
+                var node = findNodeFast(root, emptyList(), IRCTC.PAYMENT_EWALLET)
+                if (node == null) node = findNodeFast(root, listOf("e-Wallets", "Wallet"), "")
+                node?.let { 
+                    humanClickFast(it); mediumDelay()
+                    selectSpinnerWithRetry(root, "", task.payment.walletType.display)
                 }
             }
             PaymentCategory.UPI_ID -> {
-                findNodeFast(root, emptyList(), IRCTC.PAYMENT_UPI_ID)?.let { 
-                    humanClickFast(it)
-                    mediumDelay()
+                var node = findNodeFast(root, emptyList(), IRCTC.PAYMENT_UPI_ID)
+                if (node == null) node = findNodeFast(root, listOf("UPI ID"), "")
+                node?.let { 
+                    humanClickFast(it); mediumDelay()
                     if (task.payment.upiId.isNotBlank()) {
-                        findNodeFast(root, emptyList(), IRCTC.UPI_ID_INPUT)?.let { input -> setTextFast(input, task.payment.upiId) }
+                        val inputNode = findNodeFast(root, emptyList(), IRCTC.UPI_ID_INPUT)
+                            ?: findNodeFast(root, listOf("Enter UPI ID"), "")
+                        inputNode?.let { setTextFast(it, task.payment.upiId) }
                     }
                 }
             }
             PaymentCategory.UPI_APPS -> {
-                findNodeFast(root, emptyList(), IRCTC.PAYMENT_UPI_APPS)?.let { 
-                    humanClickFast(it)
-                    mediumDelay()
-                    findNodeFast(root, listOf(task.payment.upiApp.display), "")?.let { opt -> humanClickFast(opt) }
+                var node = findNodeFast(root, emptyList(), IRCTC.PAYMENT_UPI_APPS)
+                if (node == null) node = findNodeFast(root, listOf("UPI apps"), "")
+                node?.let { 
+                    humanClickFast(it); mediumDelay()
+                    selectSpinnerWithRetry(root, "", task.payment.upiApp.display)
                 }
             }
         }
         mediumDelay()
-        findNodeFast(root, listOf("Continue", "Proceed"), IRCTC.PROCEED_BTN)?.let { humanClickFast(it) }
-        updateNotification("💳 Payment Selected: ${task.payment.category.display}")
+        val proceedBtn = findNodeFast(root, listOf("Continue", "Proceed"), IRCTC.PROCEED_BTN)
+            ?: findNodeFast(root, listOf("Continue", "Proceed to Pay"), "")
+        proceedBtn?.let { humanClickFast(it) }
+        updateNotification("💳 Payment Selected")
     }
 
-    // ==================== 🛠️ HELPER FUNCTIONS ====================
-    
+    // 🎯 FIND NODE with Partial Text Backup
+    private fun findNodeFast(root: AccessibilityNodeInfo, labels: List<String>, viewId: String): AccessibilityNodeInfo? {
+        if (viewId.isNotEmpty()) {
+            val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
+            if (nodes.isNotEmpty() && nodes[0].isVisibleToUser) return nodes[0]
+        }
+        for (label in labels) {
+            val nodes = root.findAccessibilityNodeInfosByText(label)
+            for (node in nodes) if (node.isVisibleToUser) return node
+        }
+        for (label in labels) {
+            val nodes = root.findAccessibilityNodeInfosByText("")
+            for (node in nodes) {
+                if (node.text?.toString()?.contains(label, true) == true && node.isVisibleToUser) return node
+            }
+        }
+        return null
+    }
+
     private fun humanClickFast(node: AccessibilityNodeInfo) {
-        val bounds = Rect()
-        node.getBoundsInScreen(bounds)
-        val finalX = bounds.centerX().toFloat()
-        val finalY = bounds.centerY().toFloat()
-        val path = Path().apply { moveTo(finalX, finalY) }
-        
+        val bounds = Rect(); node.getBoundsInScreen(bounds)
+        val path = Path().apply { moveTo(bounds.centerX().toFloat(), bounds.centerY().toFloat()) }
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, Random.nextLong(40, 80)))
-            .build()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, Random.nextLong(80, 120))).build()
         dispatchGesture(gesture, null, null)
     }
 
@@ -458,71 +441,20 @@ class WorkflowEngine : AccessibilityService() {
         node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 
-    private suspend fun selectSpinnerFast(root: AccessibilityNodeInfo, spinnerId: String, optionText: String) {
-        findNodeFast(root, emptyList(), spinnerId)?.let { spinner ->
-            humanClickFast(spinner)
-            fastDelay()
-            findNodeFast(rootInActiveWindow ?: return, listOf(optionText), "")?.let { 
-                humanClickFast(it)
-                fastDelay()
-            }
-        }
-    }
-
-    private fun findNodeFast(root: AccessibilityNodeInfo, labels: List<String>, viewId: String): AccessibilityNodeInfo? {
-        if (viewId.isNotEmpty()) {
-            val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
-            if (nodes.isNotEmpty() && nodes[0].isVisibleToUser) return nodes[0]
-        }
-        for (label in labels) {
-            val nodes = root.findAccessibilityNodeInfosByText(label)
-            for (node in nodes) {
-                if (node.isVisibleToUser && (node.isClickable || node.parent?.isClickable == true)) return node
-            }
-        }
-        for (label in labels) {
-            val nodes = root.findAccessibilityNodeInfosByText("")
-            for (node in nodes) {
-                val nodeText = node.text?.toString()?.uppercase() ?: continue
-                if (nodeText.contains(label.uppercase())) {
-                    if (node.isVisibleToUser && (node.isClickable || node.parent?.isClickable == true)) return node
-                }
-            }
-        }
-        return null
-    }
-
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
-            val channel = NotificationChannel("vmax_channel", "VMAX Super Sniper", NotificationManager.IMPORTANCE_LOW)
+            val channel = NotificationChannel("vmax_channel", "Sniper", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
 
+    private fun updateNotification(content: String) = getSystemService(NotificationManager::class.java).notify(1, buildNotification(content))
+
     private fun buildNotification(content: String) = NotificationCompat.Builder(this, "vmax_channel")
-        .setContentTitle("🎯 VMAX Super Fast Sniper")
-        .setContentText(content)
-        .setSmallIcon(android.R.drawable.ic_dialog_info)
-        .setOngoing(true)
-        .build()
+        .setContentTitle("🎯 VMAX Sniper").setContentText(content).setSmallIcon(android.R.drawable.ic_dialog_info).setOngoing(true).build()
 
-    private fun updateNotification(content: String) {
-        getSystemService(NotificationManager::class.java).notify(1, buildNotification(content))
-        Log.d(TAG, content)
-    }
-
-    override fun onInterrupt() { 
-        isArmed = false
-        isProcessing = false
-        isReviewClicked = false
-        watchdogJob?.cancel()
-    }
-    
-    override fun onDestroy() {
-        watchdogJob?.cancel()
-        serviceScope.cancel()
-        super.onDestroy()
-    }
+    override fun onInterrupt() { resetEngineState() }
+    override fun onDestroy() { serviceScope.cancel(); super.onDestroy() }
 }
 
 fun isAccessibilityServiceEnabled(context: Context): Boolean {
