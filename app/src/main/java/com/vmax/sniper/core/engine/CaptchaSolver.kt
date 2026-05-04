@@ -15,12 +15,19 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
+/**
+ * VMAX CAPTCHA SOLVER - FINAL MERGED VERSION
+ * बीस्ट मोड | 50ms डिटेक्शन | ML Kit OCR | Auto Verify
+ */
 object CaptchaSolver {
     private const val TAG = "VMAX_Captcha"
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private var isSolving = false
     
-    // ✅ Main suspend function for Tatkal optimization
+    /**
+     * Main suspend function for Tatkal optimization
+     * तीनों वर्जन की सबसे अच्छी बातें मर्ज की गईं
+     */
     suspend fun executeBypass(
         engine: WorkflowEngine,
         captchaImageNode: AccessibilityNodeInfo,
@@ -35,7 +42,8 @@ object CaptchaSolver {
         Log.d(TAG, "🔍 Captcha detected, solving with ML Kit...")
         
         return try {
-            delay(50) // ✅ Reduced to 50ms for speed
+            // ✅ सबसे तेज़ डिले (50ms - वर्जन 2 और 3 से)
+            delay(50)
             
             val bounds = Rect()
             captchaImageNode.getBoundsInScreen(bounds)
@@ -46,13 +54,17 @@ object CaptchaSolver {
                 return false
             }
             
+            // ✅ तीनों तरीकों का कॉम्बिनेशन
             val solvedText = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // Method 1: Screenshot API (सबसे तेज़ - वर्जन 3 से)
                 solveWithScreenshotAPI(engine, bounds)
             } else {
+                // Method 2: Content Description (पुराने Android के लिए)
                 getTextFromContentDescription(captchaImageNode)
             }
             
             if (solvedText.isNotBlank() && solvedText.length in 3..8) {
+                // ✅ Text input using engine's hybrid method
                 engine.setTextFast(captchaInputNode, solvedText)
                 delay(30)
                 clickVerifyButton(engine)
@@ -62,6 +74,7 @@ object CaptchaSolver {
                 true
             } else {
                 Log.w(TAG, "⚠️ Could not solve captcha, waiting for manual input")
+                // Method 3: Manual fallback
                 waitForManualCaptcha(engine, captchaInputNode)
                 isSolving = false
                 false
@@ -74,7 +87,10 @@ object CaptchaSolver {
         }
     }
     
-    // ✅ Method 1: Android 11+ Screenshot API (NO GlobalScope - FIXED)
+    /**
+     * Method 1: Android 11+ Screenshot API
+     * सबसे तेज़ तरीका - GlobalScope से मुक्त
+     */
     private suspend fun solveWithScreenshotAPI(
         engine: WorkflowEngine,
         bounds: Rect
@@ -94,6 +110,7 @@ object CaptchaSolver {
                             bitmap = Bitmap.wrapHardwareBuffer(hardwareBuffer, screenshotResult.colorSpace)
                             
                             if (bitmap != null && bounds.width() > 0 && bounds.height() > 0) {
+                                // ✅ Safe bounds calculation
                                 val left = bounds.left.coerceIn(0, bitmap.width - 1)
                                 val top = bounds.top.coerceIn(0, bitmap.height - 1)
                                 val right = bounds.right.coerceIn(left + 1, bitmap.width)
@@ -104,7 +121,7 @@ object CaptchaSolver {
                                 if (width > 0 && height > 0) {
                                     croppedBitmap = Bitmap.createBitmap(bitmap, left, top, width, height)
                                     
-                                    // ✅ FIX: Direct OCR call - NO GlobalScope
+                                    // ✅ Direct OCR call - NO GlobalScope (वर्जन 3 का फिक्स)
                                     val image = InputImage.fromBitmap(croppedBitmap!!, 0)
                                     
                                     recognizer.process(image)
@@ -158,19 +175,23 @@ object CaptchaSolver {
         }
     }
     
-    // ✅ Clean OCR Text with IRCTC Special Mapping
+    /**
+     * Clean OCR Text with IRCTC Special Mapping
+     * तीनों वर्जन की सबसे अच्छी मैपिंग मर्ज की गई
+     */
     private fun cleanOCRText(rawText: String): String {
         var result = rawText
             .replace(Regex("[^A-Za-z0-9]"), "")
             .trim()
             .uppercase()
         
-        // ✅ ENHANCED: IRCTC Special Character Mapping (Beast Mode)
+        // ✅ बीस्ट मोड मैपिंग (सभी वर्जन से)
         result = result
             .replace("O", "0")
             .replace("Q", "0")
             .replace("D", "0")      // D looks like 0
             .replace("I", "1")
+            .replace("L", "1")      // L looks like 1 (वर्जन 2 से)
             .replace("l", "1")      // small L
             .replace("|", "1")      // pipe symbol
             .replace("Z", "2")
@@ -179,13 +200,16 @@ object CaptchaSolver {
             .replace("B", "8")
             .replace("T", "7")
             .replace("E", "3")
-            .replace("U", "V")      // U looks like V
+            .replace("U", "V")      // U looks like V (वर्जन 2 और 3 से)
             .take(6)                // ✅ IRCTC captcha is always 6 characters
         
         return result
     }
     
-    // ✅ Method 2: Get text from content description (Enhanced)
+    /**
+     * Method 2: Get text from content description
+     * पुराने Android वर्जन के लिए
+     */
     private fun getTextFromContentDescription(node: AccessibilityNodeInfo): String {
         val contentDesc = node.contentDescription?.toString()
         if (!contentDesc.isNullOrBlank()) {
@@ -195,6 +219,7 @@ object CaptchaSolver {
                 .replace("Q", "0")
                 .replace("D", "0")
                 .replace("I", "1")
+                .replace("L", "1")
                 .replace("l", "1")
                 .replace("Z", "2")
                 .replace("S", "5")
@@ -208,10 +233,13 @@ object CaptchaSolver {
         return ""
     }
     
-    // ✅ Method 3: Manual captcha wait (Last resort)
+    /**
+     * Method 3: Manual captcha wait (Last resort)
+     * यूजर के मैन्युअल इनपुट का इंतज़ार
+     */
     private suspend fun waitForManualCaptcha(engine: WorkflowEngine, inputNode: AccessibilityNodeInfo) {
         Log.d(TAG, "⏳ Waiting for manual captcha input...")
-        repeat(25) { // Reduced to 2.5 seconds
+        repeat(25) { // 2.5 seconds max
             delay(100)
             val currentText = inputNode.text?.toString() ?: ""
             if (currentText.isNotBlank() && currentText.length in 3..6) {
@@ -224,26 +252,28 @@ object CaptchaSolver {
         Log.w(TAG, "⚠️ No manual captcha entered")
     }
     
-    // ✅ Click verify button after captcha (Super fast)
+    /**
+     * Click verify button after captcha
+     * सुपर फास्ट - engine.stableClick का उपयोग
+     */
     private suspend fun clickVerifyButton(engine: WorkflowEngine) {
-        delay(30) // ✅ Reduced to 30ms
+        delay(30) // ✅ Fastest delay (वर्जन 3 से)
         repeat(3) {
-            val root = engine.rootInActiveWindow ?: return
+            val root = engine.getStableRoot() ?: return
             try {
                 val verifyBtn = engine.findNodeFast(
                     root,
                     listOf("Verify", "Submit", "Check", "जांचें", "सबमिट", "OK", "Continue", "Proceed"),
                     ""
                 )
-                verifyBtn?.let {
-                    if (it.isClickable) {
-                        engine.humanClickFast(it)
-                        Log.d(TAG, "✅ Verify button clicked")
-                        it.recycle()
-                        return
-                    }
-                    it.recycle()
+                if (verifyBtn?.isClickable == true) {
+                    // ✅ Using stableClick (वर्जन 1 और 3 से)
+                    engine.stableClick(verifyBtn)
+                    Log.d(TAG, "✅ Verify button clicked")
+                    verifyBtn.recycle()
+                    return
                 }
+                verifyBtn?.recycle()
             } finally {
                 root.recycle()
             }
