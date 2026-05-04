@@ -13,14 +13,12 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withTimeout
 import kotlin.coroutines.resume
 
 object CaptchaSolver {
     private const val TAG = "VMAX_Captcha"
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private var isSolving = false
-    private var lastCaptchaText = ""
     
     // ✅ Main suspend function for Tatkal optimization
     suspend fun executeBypass(
@@ -37,35 +35,29 @@ object CaptchaSolver {
         Log.d(TAG, "🔍 Captcha detected, solving with ML Kit...")
         
         return try {
-            // Small delay to ensure image is fully loaded
-            delay(150)
+            delay(50) // ✅ Reduced to 50ms for speed
             
             val bounds = Rect()
             captchaImageNode.getBoundsInScreen(bounds)
             
             if (bounds.width() <= 0 || bounds.height() <= 0) {
                 Log.e(TAG, "Invalid captcha bounds")
+                isSolving = false
                 return false
             }
             
             val solvedText = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                // Method 1: Android 11+ Screenshot API (Fastest)
                 solveWithScreenshotAPI(engine, bounds)
             } else {
-                // Method 2: Fallback - Try to get from content description
                 getTextFromContentDescription(captchaImageNode)
             }
             
             if (solvedText.isNotBlank() && solvedText.length in 3..8) {
-                // Fill the captcha text
-                setTextToNode(captchaInputNode, solvedText)
-                delay(80)
-                
-                // Auto click verify button
+                engine.setTextFast(captchaInputNode, solvedText)
+                delay(30)
                 clickVerifyButton(engine)
                 
                 Log.d(TAG, "✅ Captcha solved successfully: $solvedText")
-                lastCaptchaText = solvedText
                 isSolving = false
                 true
             } else {
@@ -82,7 +74,7 @@ object CaptchaSolver {
         }
     }
     
-    // ✅ Method 1: Android 11+ Screenshot API (Fastest)
+    // ✅ Method 1: Android 11+ Screenshot API (NO GlobalScope - FIXED)
     private suspend fun solveWithScreenshotAPI(
         engine: WorkflowEngine,
         bounds: Rect
@@ -94,44 +86,63 @@ object CaptchaSolver {
                 engine.mainExecutor,
                 object : AccessibilityService.TakeScreenshotCallback {
                     override fun onSuccess(screenshotResult: AccessibilityService.ScreenshotResult) {
+                        val hardwareBuffer = screenshotResult.hardwareBuffer
+                        var bitmap: Bitmap? = null
+                        var croppedBitmap: Bitmap? = null
+                        
                         try {
-                            val hardwareBuffer = screenshotResult.hardwareBuffer
-                            val bitmap = Bitmap.wrapHardwareBuffer(hardwareBuffer, screenshotResult.colorSpace)
+                            bitmap = Bitmap.wrapHardwareBuffer(hardwareBuffer, screenshotResult.colorSpace)
                             
                             if (bitmap != null && bounds.width() > 0 && bounds.height() > 0) {
-                                try {
-                                    // Crop to captcha area only
-                                    val croppedBitmap = if (bounds.left >= 0 && bounds.top >= 0 &&
-                                        bounds.right <= bitmap.width && bounds.bottom <= bitmap.height) {
-                                        Bitmap.createBitmap(
-                                            bitmap,
-                                            bounds.left,
-                                            bounds.top,
-                                            bounds.width(),
-                                            bounds.height()
-                                        )
-                                    } else {
-                                        // If bounds are invalid, use full bitmap
-                                        bitmap
-                                    }
+                                val left = bounds.left.coerceIn(0, bitmap.width - 1)
+                                val top = bounds.top.coerceIn(0, bitmap.height - 1)
+                                val right = bounds.right.coerceIn(left + 1, bitmap.width)
+                                val bottom = bounds.bottom.coerceIn(top + 1, bitmap.height)
+                                val width = right - left
+                                val height = bottom - top
+                                
+                                if (width > 0 && height > 0) {
+                                    croppedBitmap = Bitmap.createBitmap(bitmap, left, top, width, height)
                                     
-                                    // Process OCR
-                                    processOCR(croppedBitmap, continuation)
+                                    // ✅ FIX: Direct OCR call - NO GlobalScope
+                                    val image = InputImage.fromBitmap(croppedBitmap!!, 0)
                                     
-                                    // Clean up
-                                    if (croppedBitmap != bitmap) croppedBitmap.recycle()
-                                    bitmap.recycle()
-                                    
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "Crop error: ${e.message}")
-                                    continuation.resume("")
+                                    recognizer.process(image)
+                                        .addOnSuccessListener { visionText ->
+                                            val result = cleanOCRText(visionText.text)
+                                            Log.d(TAG, "📖 OCR Result: $result")
+                                            
+                                            // ✅ Cleanup after success
+                                            croppedBitmap?.recycle()
+                                            bitmap?.recycle()
+                                            hardwareBuffer.close()
+                                            
+                                            continuation.resume(result)
+                                        }
+                                        .addOnFailureListener { e ->
+                                            Log.e(TAG, "OCR failed: ${e.message}")
+                                            
+                                            // ✅ Cleanup after failure
+                                            croppedBitmap?.recycle()
+                                            bitmap?.recycle()
+                                            hardwareBuffer.close()
+                                            
+                                            continuation.resume("")
+                                        }
+                                    return // Don't go to finally
                                 }
-                            } else {
-                                continuation.resume("")
                             }
+                            
+                            // No valid captcha found
+                            bitmap?.recycle()
                             hardwareBuffer.close()
+                            continuation.resume("")
+                            
                         } catch (e: Exception) {
                             Log.e(TAG, "Screenshot processing error: ${e.message}")
+                            croppedBitmap?.recycle()
+                            bitmap?.recycle()
+                            hardwareBuffer.close()
                             continuation.resume("")
                         }
                     }
@@ -147,38 +158,49 @@ object CaptchaSolver {
         }
     }
     
-    // ✅ Process OCR with ML Kit
-    private fun processOCR(bitmap: Bitmap, continuation: kotlin.coroutines.Continuation<String>) {
-        val image = InputImage.fromBitmap(bitmap, 0)
+    // ✅ Clean OCR Text with IRCTC Special Mapping
+    private fun cleanOCRText(rawText: String): String {
+        var result = rawText
+            .replace(Regex("[^A-Za-z0-9]"), "")
+            .trim()
+            .uppercase()
         
-        recognizer.process(image)
-            .addOnSuccessListener { visionText ->
-                var result = visionText.text
-                    .replace(Regex("[^A-Za-z0-9]"), "")
-                    .trim()
-                    .uppercase()
-                
-                // Remove common confusing characters
-                result = result.replace("O", "0")
-                    .replace("I", "1")
-                    .replace("Z", "2")
-                    .take(8)
-                
-                Log.d(TAG, "📖 OCR Result: $result")
-                continuation.resume(result)
-            }
-            .addOnFailureListener { e ->
-                Log.e(TAG, "OCR failed: ${e.message}")
-                continuation.resume("")
-            }
+        // ✅ ENHANCED: IRCTC Special Character Mapping (Beast Mode)
+        result = result
+            .replace("O", "0")
+            .replace("Q", "0")
+            .replace("D", "0")      // D looks like 0
+            .replace("I", "1")
+            .replace("l", "1")      // small L
+            .replace("|", "1")      // pipe symbol
+            .replace("Z", "2")
+            .replace("S", "5")
+            .replace("G", "6")
+            .replace("B", "8")
+            .replace("T", "7")
+            .replace("E", "3")
+            .replace("U", "V")      // U looks like V
+            .take(6)                // ✅ IRCTC captcha is always 6 characters
+        
+        return result
     }
     
-    // ✅ Method 2: Get text from content description (Fallback)
+    // ✅ Method 2: Get text from content description (Enhanced)
     private fun getTextFromContentDescription(node: AccessibilityNodeInfo): String {
         val contentDesc = node.contentDescription?.toString()
         if (!contentDesc.isNullOrBlank()) {
-            val cleaned = contentDesc.replace(Regex("[^A-Za-z0-9]"), "").uppercase()
-            if (cleaned.length in 3..8) {
+            var cleaned = contentDesc.replace(Regex("[^A-Za-z0-9]"), "").uppercase()
+            cleaned = cleaned
+                .replace("O", "0")
+                .replace("Q", "0")
+                .replace("D", "0")
+                .replace("I", "1")
+                .replace("l", "1")
+                .replace("Z", "2")
+                .replace("S", "5")
+                .take(6)
+            
+            if (cleaned.length in 3..6) {
                 Log.d(TAG, "📖 Captcha from content description: $cleaned")
                 return cleaned
             }
@@ -189,53 +211,43 @@ object CaptchaSolver {
     // ✅ Method 3: Manual captcha wait (Last resort)
     private suspend fun waitForManualCaptcha(engine: WorkflowEngine, inputNode: AccessibilityNodeInfo) {
         Log.d(TAG, "⏳ Waiting for manual captcha input...")
-        var attempts = 0
-        var lastText = ""
-        
-        while (attempts < 40) { // Wait up to 4 seconds
+        repeat(25) { // Reduced to 2.5 seconds
             delay(100)
             val currentText = inputNode.text?.toString() ?: ""
-            
-            if (currentText.isNotBlank() && currentText != lastText && currentText.length in 3..8) {
+            if (currentText.isNotBlank() && currentText.length in 3..6) {
                 Log.d(TAG, "✅ Manual captcha detected: $currentText")
-                delay(100)
+                delay(50)
                 clickVerifyButton(engine)
                 return
             }
-            lastText = currentText
-            attempts++
         }
         Log.w(TAG, "⚠️ No manual captcha entered")
     }
     
-    // ✅ Click verify button after captcha
+    // ✅ Click verify button after captcha (Super fast)
     private suspend fun clickVerifyButton(engine: WorkflowEngine) {
-        delay(80)
-        repeat(3) { // Try 3 times
+        delay(30) // ✅ Reduced to 30ms
+        repeat(3) {
             val root = engine.rootInActiveWindow ?: return
-            val verifyBtn = engine.findNodeFast(
-                root,
-                listOf("Verify", "Submit", "Check", "जांचें", "सबमिट", "OK", "Continue"),
-                ""
-            )
-            if (verifyBtn?.isClickable == true) {
-                engine.humanClickFast(verifyBtn)
-                Log.d(TAG, "✅ Verify button clicked")
-                verifyBtn.recycle()
+            try {
+                val verifyBtn = engine.findNodeFast(
+                    root,
+                    listOf("Verify", "Submit", "Check", "जांचें", "सबमिट", "OK", "Continue", "Proceed"),
+                    ""
+                )
+                verifyBtn?.let {
+                    if (it.isClickable) {
+                        engine.humanClickFast(it)
+                        Log.d(TAG, "✅ Verify button clicked")
+                        it.recycle()
+                        return
+                    }
+                    it.recycle()
+                }
+            } finally {
                 root.recycle()
-                return
             }
-            root.recycle()
-            delay(80)
+            delay(30)
         }
-    }
-    
-    // ✅ Set text to input node
-    private fun setTextToNode(node: AccessibilityNodeInfo, text: String) {
-        val args = Bundle().apply {
-            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-        }
-        node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-        Log.d(TAG, "✏️ Text set to input field: $text")
     }
 }
