@@ -24,8 +24,8 @@ object CaptchaSolver {
     ) {
         if (isSolving) return
         
-        // ✅ FIX: Wait for image to load completely (as shown in your photo)
-        Thread.sleep(200)  // 200ms delay for image load
+        // ✅ Wait for image to load completely
+        Thread.sleep(200)
         
         isSolving = true
         Log.d(TAG, "🔍 Captcha Detected! Solving...")
@@ -85,7 +85,6 @@ object CaptchaSolver {
                     Log.w(TAG, "⚠️ AI could not read Captcha")
                 }
                 
-                // Reset solving flag after 2 seconds
                 Thread {
                     Thread.sleep(2000)
                     isSolving = false
