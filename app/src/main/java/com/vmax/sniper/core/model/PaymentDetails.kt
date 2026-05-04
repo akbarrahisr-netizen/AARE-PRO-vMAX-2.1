@@ -36,10 +36,10 @@ enum class BookingOption(val value: Int, val display: String) : Parcelable {
 
 @Parcelize
 enum class TravelClass(val code: String, val display: String) : Parcelable {
-    AC_FIRST("1A", "AC First Class (1A)"),
-    AC_2TIER("2A", "AC 2 Tier (2A)"),
-    AC_3TIER("3A", "AC 3 Tier (3A)"),
-    SLEEPER("SL", "Sleeper (SL)")
+    AC_FIRST("1A", "AC First Class"),
+    AC_2TIER("2A", "AC 2 Tier"),
+    AC_3TIER("3A", "AC 3 Tier"),
+    SLEEPER("SL", "Sleeper")
 }
 
 @Parcelize
@@ -57,9 +57,6 @@ data class PaymentDetails(
     var manualPayment: Boolean = false,
     var autofillOTP: Boolean = true
 ) : Parcelable {
-    fun isValid(): Boolean {
-        if (category == PaymentCategory.UPI_ID && upiId.isBlank()) return false
-        return true
-    }
+    fun isValid(): Boolean = !(category == PaymentCategory.UPI_ID && upiId.isBlank())
     fun getDisplayText(): String = category.display
 }
