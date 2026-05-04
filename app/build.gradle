@@ -46,20 +46,22 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    // ✅ FIX: OCR library strip error
+    // ✅ FIX: OCR library strip error (CRITICAL - दोनों से मर्ज)
     packagingOptions {
         doNotStrip "*/armeabi-v7a/libmlkit_google_ocr_pipeline.so"
         doNotStrip "*/arm64-v8a/libmlkit_google_ocr_pipeline.so"
+        doNotStrip "*/x86/libmlkit_google_ocr_pipeline.so"
+        doNotStrip "*/x86_64/libmlkit_google_ocr_pipeline.so"
     }
 }
 
 dependencies {
-    // Core & UI
+    // ✅ Core & UI (Version 1 से)
     implementation "androidx.core:core-ktx:1.12.0"
     implementation "androidx.appcompat:appcompat:1.6.1"
     implementation "com.google.android.material:material:1.11.0"
 
-    // Compose (Sniper Dashboard)
+    // ✅ Compose (Sniper Dashboard - Version 1 से)
     implementation platform("androidx.compose:compose-bom:2024.02.00")
     implementation "androidx.activity:activity-compose:1.8.2"
     implementation "androidx.compose.ui:ui"
@@ -68,14 +70,33 @@ dependencies {
     implementation "androidx.compose.material3:material3"
     debugImplementation "androidx.compose.ui:ui-tooling"
 
-    // Engine Components
+    // ✅ Engine Components (Version 1 से)
     implementation "androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0"
     implementation "androidx.lifecycle:lifecycle-runtime-compose:2.7.0"
     
+    // ✅ Coroutines & Serialization (Version 1 से)
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
     implementation "androidx.datastore:datastore-preferences:1.0.0"
     implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0"
 
-    // 🎯 Sniper Eyes (OCR for Captcha)
+    // ✅ Local Broadcast Manager (WorkflowEngine के लिए)
+    implementation "androidx.localbroadcastmanager:localbroadcastmanager:1.1.0"
+
+    // ✅ ========== CAPTCHA SOLVER DEPENDENCIES (दोनों से मर्ज) ==========
+    // ML Kit Text Recognition (Fast on-device OCR)
     implementation "com.google.mlkit:text-recognition:16.0.0"
+    
+    // ✅ Play Services TFLite Java (Better performance - Version 2 से)
+    implementation 'com.google.android.gms:play-services-tflite-java:16.0.1'
+    
+    // Optional: OkHttp for fallback OCR API (अगर जरूरत हो)
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'com.squareup.okhttp3:logging-interceptor:4.12.0'
+
+    // ✅ Testing (Optional)
+    testImplementation "junit:junit:4.13.2"
+    androidTestImplementation "androidx.test.ext:junit:1.1.5"
+    androidTestImplementation "androidx.test.espresso:espresso-core:3.5.1"
+    androidTestImplementation platform("androidx.compose:compose-bom:2024.02.00")
+    androidTestImplementation "androidx.compose.ui:ui-test-junit4"
 }
