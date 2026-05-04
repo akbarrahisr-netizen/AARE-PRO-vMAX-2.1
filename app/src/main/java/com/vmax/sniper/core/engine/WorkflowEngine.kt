@@ -65,7 +65,7 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
+    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var activeTask: SniperTask? = null
     private var isArmed = false
     private var isProcessing = false
@@ -130,7 +130,6 @@ class WorkflowEngine : AccessibilityService() {
         watchdogJob?.cancel()
     }
 
-    // ==================== 🎯 REFRESH ENGINE ====================
     private fun triggerPreciseRefresh() {
         val root = rootInActiveWindow ?: return
         try {
@@ -161,82 +160,78 @@ class WorkflowEngine : AccessibilityService() {
         } finally { root.recycle() }
     }
 
-    // ==================== 🚀 MAIN ENGINE ====================
+    // ==================== 🚀 MAIN ENGINE (Fixed) ====================
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!isArmed || isProcessing) return
         val root = rootInActiveWindow ?: return
 
-        try {
-            if (root.packageName == IRCTC.PKG) {
+        if (root.packageName != IRCTC.PKG) {
+            root.recycle()
+            return
+        }
+
+        serviceScope.launch {
+            isProcessing = true
+            try {
+                // ✅ FIX 1: Fresh root for each operation
+                val currentRoot = rootInActiveWindow ?: return@launch
                 
                 // 1. Popup Clearer
-                findNodeFast(root, listOf("OK", "YES", "ठीक है", "हाँ"), "")?.let {
+                findNodeFast(currentRoot, listOf("OK", "YES", "ठीक है", "हाँ"), "")?.let {
                     humanClickFast(it)
                     fastDelay()
-                    return
+                    return@launch
                 }
 
                 // 2. Post-Refresh Class Selection
-                if (hasRefreshed && findNodeFast(root, listOf("SL", "3A", "2A"), "") != null && !isReviewClicked) {
-                    isProcessing = true
-                    serviceScope.launch {
-                        try { 
-                            selectSpecificClassAfterRefresh() 
-                            findPassengerFormAndFill()
-                        } finally { isProcessing = false }
-                    }
-                    return
+                if (hasRefreshed && findNodeFast(currentRoot, listOf("SL", "3A", "2A"), "") != null && !isReviewClicked) {
+                    selectSpecificClassAfterRefresh()
+                    findPassengerFormAndFill()
+                    return@launch
                 }
 
                 // 3. Passenger Form Filling
-                if (!isReviewClicked && findNodeFast(root, listOf("Name"), IRCTC.NAME_INPUT) != null) {
-                    isProcessing = true
-                    serviceScope.launch {
-                        try { fillAllDetailsSuperFast() } 
-                        catch (e: Exception) { Log.e(TAG, "Fill Error: ${e.message}") }
-                        finally { isProcessing = false }
-                    }
-                    return
+                if (!isReviewClicked && findNodeFast(currentRoot, listOf("Name"), IRCTC.NAME_INPUT) != null) {
+                    fillAllDetailsSuperFast()
+                    return@launch
                 }
                 
                 // 4. Payment Selection
-                if (root.findAccessibilityNodeInfosByViewId(IRCTC.PAYMENT_CARDS).isNotEmpty()) {
-                    isProcessing = true
-                    serviceScope.launch {
-                        try { selectPaymentFast(root) } 
-                        finally { isProcessing = false }
-                    }
-                    return
+                if (currentRoot.findAccessibilityNodeInfosByViewId(IRCTC.PAYMENT_CARDS).isNotEmpty()) {
+                    selectPaymentFast(currentRoot)
+                    return@launch
                 }
                 
                 // 5. Captcha Detection
-                val captchaInput = root.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_INPUT)
+                val captchaInput = currentRoot.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_INPUT)
                 if (captchaInput.isNotEmpty() && activeTask?.captchaAutofill == true) {
-                    val captchaImage = root.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_IMAGE)
+                    val captchaImage = currentRoot.findAccessibilityNodeInfosByViewId(IRCTC.CAPTCHA_IMAGE)
                     if (captchaImage.isNotEmpty()) {
                         CaptchaSolver.executeBypass(this@WorkflowEngine, captchaImage[0], captchaInput[0])
                     }
-                    return
+                    return@launch
                 }
                 
                 // 6. Final Book Now
-                findNodeFast(root, listOf("Book Now", "Proceed to Pay", "Pay"), IRCTC.BOOK_NOW_BTN)?.let {
+                findNodeFast(currentRoot, listOf("Book Now", "Proceed to Pay", "Pay"), IRCTC.BOOK_NOW_BTN)?.let {
                     humanClickFast(it)
                     updateNotification("✅ Booking Submitted!")
                     isArmed = false
                     watchdogJob?.cancel()
-                    return
+                    return@launch
                 }
                 
-                if (isReviewClicked) return
+                if (isReviewClicked) return@launch
+            } catch (e: Exception) {
+                Log.e(TAG, "Event Error: ${e.message}")
+            } finally {
+                isProcessing = false
+                try { root.recycle() } catch (e: Exception) {}
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Event Error: ${e.message}")
-            isProcessing = false
-        } finally { root.recycle() }
+        }
     }
 
-    // ==================== 🎯 WATCHDOG ====================
+    // ==================== 🎯 WATCHDOG (Faster) ====================
     private fun startWatchdog() {
         watchdogJob?.cancel()
         watchdogJob = serviceScope.launch {
@@ -245,13 +240,13 @@ class WorkflowEngine : AccessibilityService() {
                 val root = rootInActiveWindow
                 if (root != null && root.packageName == IRCTC.PKG) {
                     
-                    // Retry if Continue button still visible
+                    // ✅ FIX 2: Retry if Continue button still visible
                     val proceedBtn = findNodeFast(root, listOf("Continue", "अभी बुक करें"), IRCTC.PROCEED_BTN)
                     if (proceedBtn != null && proceedBtn.isVisibleToUser && retryCount < 3) {
                         retryCount++
                         Log.d(TAG, "🔄 Retry #$retryCount: Continue button still visible")
                         humanClickFast(proceedBtn)
-                        delay(200)
+                        delay(150)
                     } else {
                         retryCount = 0
                     }
@@ -277,8 +272,8 @@ class WorkflowEngine : AccessibilityService() {
                         }
                     }
                 }
-                root?.recycle()
-                delay(250)
+                try { root?.recycle() } catch (e: Exception) {}
+                delay(100)  // ✅ FIX 3: 250ms → 100ms
             }
         }
     }
@@ -451,6 +446,7 @@ class WorkflowEngine : AccessibilityService() {
 
     // ==================== 🛠️ HELPER FUNCTIONS ====================
     
+    // ✅ FIX 4: Human Click Speed (40-80ms)
     private fun humanClickFast(node: AccessibilityNodeInfo) {
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
@@ -459,7 +455,7 @@ class WorkflowEngine : AccessibilityService() {
         val path = Path().apply { moveTo(finalX, finalY) }
         
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, Random.nextLong(10, 25)))
+            .addStroke(GestureDescription.StrokeDescription(path, 0, Random.nextLong(40, 80)))  // ✅ Slower
             .build()
         dispatchGesture(gesture, null, null)
     }
