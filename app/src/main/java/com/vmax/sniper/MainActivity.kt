@@ -378,30 +378,47 @@ fun VmaxVIPScreen() {
         Text(text = "🎯 SNIPER WILL FIRE AT $targetHour:00:00", color = Color(0xFFFF9800), fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(modifier = Modifier.height(12.dp))
 
-        // ==================== ARM BUTTON ====================
+        // ==================== ARM BUTTON (FULLY VALIDATED) ====================
         Button(
             onClick = {
+                // ✅ 1. Accessibility Check
                 if (!isEnabled) {
                     Toast.makeText(context, "⚠️ Enable Accessibility Service first!", Toast.LENGTH_LONG).show()
                     return@Button
                 }
 
-                val validPassengers = passengers.filter { it.isFilled() }
-                if (validPassengers.isEmpty()) {
-                    Toast.makeText(context, "❌ Fill at least one passenger!", Toast.LENGTH_SHORT).show()
+                // ✅ 2. Train Number Validation (5 digits)
+                if (trainNumber.length != 5 || !trainNumber.all { it.isDigit() }) {
+                    Toast.makeText(context, "❌ Train number must be 5 digits!", Toast.LENGTH_SHORT).show()
                     return@Button
                 }
 
-                // Save all data
+                // ✅ 3. Journey Date Validation (DD-MM-YYYY)
+                if (!journeyDate.matches(Regex("\\d{2}-\\d{2}-\\d{4}"))) {
+                    Toast.makeText(context, "❌ Invalid journey date! Use DD-MM-YYYY format", Toast.LENGTH_SHORT).show()
+                    return@Button
+                }
+
+                // ✅ 4. Passenger Validation (name + age both required)
+                val validPassengers = passengers.filter { it.name.isNotBlank() && it.age.isNotBlank() }
+                if (validPassengers.isEmpty()) {
+                    Toast.makeText(context, "❌ Fill at least one passenger with Name & Age!", Toast.LENGTH_SHORT).show()
+                    return@Button
+                }
+
+                // ✅ 5. Save all data
                 sharedPrefs.edit().apply {
                     putString("TRAIN_NO", trainNumber)
                     putString("JOURNEY_DATE", journeyDate)
                     putString("LATENCY", latency)
                     putString("TARGET_CLASS", selectedClass)
                     putString("QUOTA", selectedQuota)
-                    putString("PASSENGERS", validPassengers.joinToString(";") { "${it.name}|${it.age}|${it.gender}|${it.berthPreference}|${it.meal}" })
+                    putString("PASSENGERS", validPassengers.joinToString(";") { 
+                        "${it.name}|${it.age}|${it.gender}|${it.berthPreference}|${it.meal}" 
+                    })
                 }.apply()
 
+                // ✅ 6. Create SniperTask
                 val task = SniperTask(
                     triggerTime = "$targetHour:00:00",
                     msAdvance = latency.toIntOrNull() ?: 150,
@@ -427,6 +444,7 @@ fun VmaxVIPScreen() {
                     captchaAutofill = captchaAutofill
                 )
 
+                // ✅ 7. Start WorkflowEngine Service
                 val intent = Intent(context, WorkflowEngine::class.java).apply {
                     action = WorkflowEngine.ACTION_START_SNIPER
                     putExtra(WorkflowEngine.EXTRA_TASK, task)
