@@ -11,10 +11,12 @@ object TimeSniper {
 
     suspend fun scheduleFire(
         targetHour: Int,
+        targetMinute: Int = 0,
+        targetSecond: Int = 0,
         advanceMs: Long,
         onFire: () -> Unit
     ) {
-        Log.d(TAG, "🎯 Scheduler started - Target: ${targetHour}:00:00, Advance: ${advanceMs}ms")
+        Log.d(TAG, "🎯 Scheduler started - Target: $targetHour:$targetMinute:$targetSecond, Advance: ${advanceMs}ms")
         lastLoggedSecond = -1
         
         while (true) {
@@ -27,7 +29,7 @@ object TimeSniper {
             val ms = cal.get(Calendar.MILLISECOND)
 
             val totalMs = ((hour * 3600L) + (minute * 60L) + second) * 1000L + ms
-            val targetMs = targetHour * 3600L * 1000L
+            val targetMs = (targetHour * 3600L + targetMinute * 60L + targetSecond) * 1000L
 
             val remaining = targetMs - advanceMs - totalMs
 
