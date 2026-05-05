@@ -7,6 +7,7 @@ import java.util.Calendar
 object TimeSniper {
 
     private const val TAG = "TimeSniper"
+    private var lastLoggedSecond = -1
 
     suspend fun scheduleFire(
         targetHour: Int,
@@ -14,6 +15,7 @@ object TimeSniper {
         onFire: () -> Unit
     ) {
         Log.d(TAG, "🎯 Scheduler started - Target: ${targetHour}:00:00, Advance: ${advanceMs}ms")
+        lastLoggedSecond = -1
         
         while (true) {
             val now = TimeSyncManager.currentTimeMillis()
@@ -31,7 +33,12 @@ object TimeSniper {
 
             when {
                 remaining > 500 -> {
-                    Log.d(TAG, "⏰ Waiting ${remaining}ms until fire")
+                    // Log only once per second to avoid spam
+                    val remainingSec = (remaining / 1000).toInt()
+                    if (remainingSec != lastLoggedSecond) {
+                        lastLoggedSecond = remainingSec
+                        Log.d(TAG, "⏰ Countdown: ${remainingSec}s remaining")
+                    }
                     delay(remaining - 500)
                 }
                 remaining > 0 -> {
