@@ -454,14 +454,19 @@ class WorkflowEngine : AccessibilityService() {
                     resetEngine()
                     isArmed.set(true)
                     
-                    val targetHour = if (task.triggerTime.startsWith("10")) 10 else 11
+                    // ✅ PARSE triggerTime (format: "HH:MM:SS" or "HH:MM" or "HH")
+                    val parts = task.triggerTime.split(":")
+                    val targetHour = parts.getOrNull(0)?.toIntOrNull() ?: 10
+                    val targetMinute = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                    val targetSecond = parts.getOrNull(2)?.toIntOrNull() ?: 0
                     val advanceMs = task.msAdvance.toLong().coerceIn(120, 200)
                     
                     TimeSyncManager.syncTime()
                     logDebug("⏰ Time synced! Offset: ${TimeSyncManager.getOffset()}ms")
-                    logDebug("🎯 Target: $targetHour:00:00 with ${advanceMs}ms advance")
+                    logDebug("🎯 Target: $targetHour:$targetMinute:$targetSecond with ${advanceMs}ms advance")
                     
-                    TimeSniper.scheduleFire(targetHour, advanceMs) {
+                    // ✅ UPDATED CALL with all parameters
+                    TimeSniper.scheduleFire(targetHour, targetMinute, targetSecond, advanceMs) {
                         isArmed.set(true)
                         mainScope.launch {
                             if (!hasRefreshed.get()) {
