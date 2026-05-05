@@ -36,9 +36,6 @@ import java.util.concurrent.atomic.AtomicReference
 /**
  * VMAX ELITE - EVENT-DRIVEN STATE MACHINE v7.3.0
  * ✅ Smart Resume | Force Attack | Production Ready
- * 
- * @author VMAX Team
- * @version 7.3.0 FINAL
  */
 class WorkflowEngine : AccessibilityService() {
 
@@ -465,6 +462,7 @@ class WorkflowEngine : AccessibilityService() {
             putString("trigger_time", task.triggerTime)
             putString("mobile", task.mobileNo)
             putBoolean("insurance", task.insurance)
+            putBoolean("captcha_autofill", task.captchaAutofill)
             apply()
         }
         logDebug("💾 Form cache saved")
@@ -477,7 +475,7 @@ class WorkflowEngine : AccessibilityService() {
             
             val currentScreen = getCurrentScreen()
             
-            // ✅ SMART RESUME: Manually login kiye ho to wahan se start karo
+            // SMART RESUME: Manually login kiye ho to wahan se start karo
             if (currentStep == WorkflowStep.IDLE || currentStep == WorkflowStep.REFRESH_DONE) {
                 when (currentScreen) {
                     "PASSENGER_FORM" -> {
@@ -489,12 +487,10 @@ class WorkflowEngine : AccessibilityService() {
                     "REVIEW" -> {
                         logDebug("🔄 Smart resume detected: Already on Review Screen")
                         currentStep = WorkflowStep.REVIEW_READY
-                        // Don't return here, let it go to REVIEW_READY case
                     }
                     "PAYMENT" -> {
                         logDebug("🔄 Smart resume detected: Already on Payment Screen")
                         currentStep = WorkflowStep.PAYMENT_DONE
-                        // Let it go to PAYMENT_DONE case
                     }
                 }
             }
@@ -652,7 +648,7 @@ class WorkflowEngine : AccessibilityService() {
         logDebug("✅ SERVICE ACTIVE")
     }
 
-    // ✅ UPDATED onStartCommand with FORCE_ATTACK support
+    // UPDATED onStartCommand with FORCE_ATTACK support
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_START_SNIPER) {
             val task = if (Build.VERSION.SDK_INT >= 33) {
@@ -673,7 +669,7 @@ class WorkflowEngine : AccessibilityService() {
                     isArmed.set(true)
                     
                     if (forceAttack) {
-                        // ✅ IMMEDIATE ATTACK - No timer wait
+                        // IMMEDIATE ATTACK - No timer wait
                         logDebug("🔥 FORCE ATTACK MODE - Starting immediately!")
                         mainScope.launch {
                             if (currentStep == WorkflowStep.IDLE) {
