@@ -34,8 +34,8 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * VMAX ELITE - EVENT-DRIVEN STATE MACHINE v7.3.0
- * ✅ Smart Resume | Force Attack | Production Ready
+ * VMAX ELITE - EVENT-DRIVEN STATE MACHINE v7.3.2
+ * ✅ Compilation Fixed | Smart Resume | Force Attack
  */
 class WorkflowEngine : AccessibilityService() {
 
@@ -317,6 +317,7 @@ class WorkflowEngine : AccessibilityService() {
             withRoot { root -> safeFindById(root, IRCTC.AGE_INPUT)?.let { setTextFast(it, passenger.age.toString()) } }
             delay(Timing.FAST_MS)
             
+            // gender is String in PassengerData (e.g., "Male", "Female")
             if (passenger.gender.isNotBlank()) {
                 withRoot { root -> safeFindById(root, IRCTC.GENDER_SPINNER)?.let { click(it) } }
                 delay(Timing.FAST_MS)
@@ -492,6 +493,7 @@ class WorkflowEngine : AccessibilityService() {
                         logDebug("🔄 Smart resume detected: Already on Payment Screen")
                         currentStep = WorkflowStep.PAYMENT_DONE
                     }
+                    else -> { /* do nothing */ }
                 }
             }
             
@@ -609,6 +611,7 @@ class WorkflowEngine : AccessibilityService() {
             val longPressGesture = GestureDescription.Builder()
                 .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
                 .build()
+            // ✅ Correct GestureResultCallback (Android SDK class)
             dispatchGesture(longPressGesture, object : GestureDescription.GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription?) {
                     logDebug("Gesture completed successfully")
@@ -648,7 +651,7 @@ class WorkflowEngine : AccessibilityService() {
         logDebug("✅ SERVICE ACTIVE")
     }
 
-    // UPDATED onStartCommand with FORCE_ATTACK support
+    // ✅ UPDATED onStartCommand with FORCE_ATTACK support
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_START_SNIPER) {
             val task = if (Build.VERSION.SDK_INT >= 33) {
