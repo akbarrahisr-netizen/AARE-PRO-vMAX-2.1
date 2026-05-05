@@ -28,6 +28,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
@@ -256,7 +258,6 @@ fun VmaxVIPScreen() {
         autofillOTP = sharedPrefs.getBoolean("AUTOFILL_OTP", true)
         captchaAutofill = sharedPrefs.getBoolean("CAPTCHA_AUTOFILL", true)
 
-        // Load passengers
         val savedPassengersJson = sharedPrefs.getString("PASSENGERS_JSON", "")
         if (!savedPassengersJson.isNullOrEmpty()) {
             try {
@@ -267,7 +268,6 @@ fun VmaxVIPScreen() {
         }
         if (passengers.isEmpty()) passengers.add(PassengerData())
 
-        // Load children
         val savedChildrenJson = sharedPrefs.getString("CHILDREN_JSON", "")
         if (!savedChildrenJson.isNullOrEmpty()) {
             try {
@@ -278,21 +278,15 @@ fun VmaxVIPScreen() {
         }
     }
     
-    // Real-time auto-save for passengers
+    // Real-time auto-save
     LaunchedEffect(passengers.toList()) {
         if (passengers.isNotEmpty()) {
-            sharedPrefs.edit()
-                .putString("PASSENGERS_JSON", Json.encodeToString(passengers.toList()))
-                .apply()
+            sharedPrefs.edit().putString("PASSENGERS_JSON", Json.encodeToString(passengers.toList())).apply()
         }
     }
-    
-    // Real-time auto-save for children
     LaunchedEffect(children.toList()) {
         if (children.isNotEmpty()) {
-            sharedPrefs.edit()
-                .putString("CHILDREN_JSON", Json.encodeToString(children.toList()))
-                .apply()
+            sharedPrefs.edit().putString("CHILDREN_JSON", Json.encodeToString(children.toList())).apply()
         }
     }
 
@@ -304,40 +298,27 @@ fun VmaxVIPScreen() {
         Text("Precision Refresh | Tatkal Optimized", color = Color(0xFF4CAF50), fontSize = 12.sp)
         Spacer(modifier = Modifier.height(20.dp))
 
-        Button(
-            onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+        Button(onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = if (isEnabled) Color(0xFF2E7D32) else Color.DarkGray)
-        ) {
-            Text(if (isEnabled) "Accessibility Service ON" else "Enable Accessibility Service")
-        }
+        ) { Text(if (isEnabled) "Accessibility Service ON" else "Enable Accessibility Service") }
         Spacer(modifier = Modifier.height(12.dp))
         
         if (!isBatteryOptimizationIgnored) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                                data = Uri.parse("package:${context.packageName}")
-                            }
-                            context.startActivity(intent)
-                        }
-                    },
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFB71C1C))
-            ) {
-                Text(
-                    "Battery Optimization Active! Tap to disable for better performance",
-                    color = Color.White,
-                    modifier = Modifier.padding(12.dp),
-                    fontSize = 12.sp
-                )
+            Card(modifier = Modifier.fillMaxWidth().clickable {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    context.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                    })
+                }
+            }, colors = CardDefaults.cardColors(containerColor = Color(0xFFB71C1C))) {
+                Text("Battery Optimization Active! Tap to disable for better performance",
+                    color = Color.White, modifier = Modifier.padding(12.dp), fontSize = 12.sp)
             }
             Spacer(modifier = Modifier.height(12.dp))
         }
 
-        // TIMING OPTIMIZATION CARD
+        // TIMING CARD
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Text("TIMING OPTIMIZATION", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
@@ -359,7 +340,7 @@ fun VmaxVIPScreen() {
                     value = triggerTime,
                     onValueChange = { triggerTime = it },
                     label = { Text("Fire Time (HH:MM:SS)") },
-                    placeholder = { Text("10:00:00 या 11:00:00") },
+                    placeholder = { Text("10:00:00") },
                     modifier = Modifier.fillMaxWidth(),
                     supportingText = { Text("खाली छोड़ो तो auto set होगा", color = Color.Gray) }
                 )
@@ -367,15 +348,21 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(12.dp))
 
-        // JOURNEY DETAILS CARD
+        // JOURNEY CARD
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(modifier = Modifier.padding(12.dp)) {
                 Text("JOURNEY DETAILS", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
-                
-                OutlinedTextField(value = trainNumber, onValueChange = { 
-                    if (it.length <= 5 && it.all { c -> c.isDigit() }) trainNumber = it 
-                }, label = { Text("Train Number (5 digits)") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
-                    isError = trainNumber.isNotBlank() && trainNumber.length != 5)
+                OutlinedTextField(
+                    value = trainNumber, 
+                    onValueChange = { 
+                        if (it.length <= 5 && it.all { c -> c.isDigit() }) trainNumber = it 
+                    },
+                    label = { Text("Train Number (5 digits)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = trainNumber.isNotBlank() && trainNumber.length != 5
+                )
                 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
@@ -388,9 +375,7 @@ fun VmaxVIPScreen() {
                         isError = journeyDate.isNotBlank() && !isValidDate(journeyDate)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = { datePickerDialog.show() }) {
-                        Text("📅")
-                    }
+                    Button(onClick = { datePickerDialog.show() }) { Text("📅") }
                 }
             }
         }
@@ -398,7 +383,7 @@ fun VmaxVIPScreen() {
 
         // CLASS & QUOTA CARD
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(modifier = Modifier.padding(12.dp)) {
                 Text("CLASS & QUOTA", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
                 
                 ExposedDropdownMenuBox(expanded = expandedClass, onExpandedChange = { expandedClass = it }) {
@@ -426,23 +411,19 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(12.dp))
 
-        // PASSENGERS SECTION WITH DROPDOWNS
+        // PASSENGERS SECTION
         Text("PASSENGERS (Adult)", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.align(Alignment.Start))
         
         passengers.forEachIndexed { index, p ->
-            // ✅ FIX 1: remember(index) to prevent state reset on recomposition
             var expandedGender by remember(index) { mutableStateOf(false) }
             var expandedBerth by remember(index) { mutableStateOf(false) }
             var expandedMeal by remember(index) { mutableStateOf(false) }
             
             val genderOptions = listOf("Male", "Female", "Transgender")
-            val berthOptions = listOf("LOWER", "MIDDLE", "UPPER", "SIDE LOWER", "SIDE UPPER", "WINDOW SIDE", "CABIN", "COUPE")
-            val mealOptions = listOf("VEG", "NON VEG", "JAIN MEAL", "DIABETIC VEG", "DIABETIC NON VEG")
+            val berthOptions = listOf("LOWER", "MIDDLE", "UPPER", "SIDE LOWER")
+            val mealOptions = listOf("VEG", "NON VEG", "JAIN MEAL")
             
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF2A2A35)), 
-                modifier = Modifier.padding(vertical = 6.dp).fillMaxWidth()
-            ) {
+            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF2A2A35)), modifier = Modifier.padding(vertical = 6.dp).fillMaxWidth()) {
                 Column(modifier = Modifier.padding(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("${index + 1}.", color = Color(0xFFFF9800), fontWeight = FontWeight.Bold, modifier = Modifier.width(25.dp))
@@ -453,96 +434,47 @@ fun VmaxVIPScreen() {
                             if (it.isEmpty() || it.all { c -> c.isDigit() }) passengers[index] = p.copy(age = it) 
                         }, label = { Text("Age") }, modifier = Modifier.weight(1f), singleLine = true)
                     }
-                    
                     Spacer(modifier = Modifier.height(8.dp))
                     
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        // GENDER DROPDOWN
-                        ExposedDropdownMenuBox(
-                            expanded = expandedGender,
-                            onExpandedChange = { expandedGender = it },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            OutlinedTextField(
-                                value = p.gender.ifBlank { "Select Gender" },
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Gender") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedGender) },
-                                modifier = Modifier.fillMaxWidth().menuAnchor()
-                            )
-                            ExposedDropdownMenu(
-                                expanded = expandedGender,
-                                onDismissRequest = { expandedGender = false }
-                            ) {
+                        ExposedDropdownMenuBox(expanded = expandedGender, onExpandedChange = { expandedGender = it }, modifier = Modifier.weight(1f)) {
+                            OutlinedTextField(value = p.gender.ifBlank { "Select Gender" }, onValueChange = {}, readOnly = true,
+                                label = { Text("Gender") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedGender) },
+                                modifier = Modifier.fillMaxWidth().menuAnchor())
+                            ExposedDropdownMenu(expanded = expandedGender, onDismissRequest = { expandedGender = false }) {
                                 genderOptions.forEach { option ->
-                                    DropdownMenuItem(
-                                        text = { Text(option) },
-                                        onClick = {
-                                            passengers[index] = p.copy(gender = option)
-                                            expandedGender = false
-                                        }
-                                    )
+                                    DropdownMenuItem(text = { Text(option) }, onClick = {
+                                        passengers[index] = p.copy(gender = option)
+                                        expandedGender = false
+                                    })
                                 }
                             }
                         }
 
-                        // BERTH DROPDOWN
-                        ExposedDropdownMenuBox(
-                            expanded = expandedBerth,
-                            onExpandedChange = { expandedBerth = it },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            OutlinedTextField(
-                                value = p.berthPreference.ifBlank { "Select Berth" },
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Berth") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedBerth) },
-                                modifier = Modifier.fillMaxWidth().menuAnchor()
-                            )
-                            ExposedDropdownMenu(
-                                expanded = expandedBerth,
-                                onDismissRequest = { expandedBerth = false }
-                            ) {
+                        ExposedDropdownMenuBox(expanded = expandedBerth, onExpandedChange = { expandedBerth = it }, modifier = Modifier.weight(1f)) {
+                            OutlinedTextField(value = p.berthPreference.ifBlank { "Select Berth" }, onValueChange = {}, readOnly = true,
+                                label = { Text("Berth") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedBerth) },
+                                modifier = Modifier.fillMaxWidth().menuAnchor())
+                            ExposedDropdownMenu(expanded = expandedBerth, onDismissRequest = { expandedBerth = false }) {
                                 berthOptions.forEach { option ->
-                                    DropdownMenuItem(
-                                        text = { Text(option) },
-                                        onClick = {
-                                            passengers[index] = p.copy(berthPreference = option)
-                                            expandedBerth = false
-                                        }
-                                    )
+                                    DropdownMenuItem(text = { Text(option) }, onClick = {
+                                        passengers[index] = p.copy(berthPreference = option)
+                                        expandedBerth = false
+                                    })
                                 }
                             }
                         }
 
-                        // MEAL DROPDOWN
-                        ExposedDropdownMenuBox(
-                            expanded = expandedMeal,
-                            onExpandedChange = { expandedMeal = it },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            OutlinedTextField(
-                                value = p.meal.ifBlank { "Select Meal" },
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Meal") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedMeal) },
-                                modifier = Modifier.fillMaxWidth().menuAnchor()
-                            )
-                            ExposedDropdownMenu(
-                                expanded = expandedMeal,
-                                onDismissRequest = { expandedMeal = false }
-                            ) {
+                        ExposedDropdownMenuBox(expanded = expandedMeal, onExpandedChange = { expandedMeal = it }, modifier = Modifier.weight(1f)) {
+                            OutlinedTextField(value = p.meal.ifBlank { "Select Meal" }, onValueChange = {}, readOnly = true,
+                                label = { Text("Meal") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedMeal) },
+                                modifier = Modifier.fillMaxWidth().menuAnchor())
+                            ExposedDropdownMenu(expanded = expandedMeal, onDismissRequest = { expandedMeal = false }) {
                                 mealOptions.forEach { option ->
-                                    DropdownMenuItem(
-                                        text = { Text(option) },
-                                        onClick = {
-                                            passengers[index] = p.copy(meal = option)
-                                            expandedMeal = false
-                                        }
-                                    )
+                                    DropdownMenuItem(text = { Text(option) }, onClick = {
+                                        passengers[index] = p.copy(meal = if (option == "Select Meal") "" else option)
+                                        expandedMeal = false
+                                    })
                                 }
                             }
                         }
@@ -561,7 +493,6 @@ fun VmaxVIPScreen() {
         // INFANTS SECTION
         Text("INFANTS (Optional)", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.align(Alignment.Start))
         children.forEachIndexed { index, c ->
-            // ✅ FIX 1: remember(index) for child dropdown as well
             var expandedChildGender by remember(index) { mutableStateOf(false) }
             val childGenderOptions = listOf("Male", "Female")
             
@@ -573,31 +504,16 @@ fun VmaxVIPScreen() {
                         OutlinedTextField(value = c.ageRange, onValueChange = { children[index] = c.copy(ageRange = it) }, 
                             label = { Text("Age (1-4)") }, modifier = Modifier.weight(1f), singleLine = true)
                         
-                        ExposedDropdownMenuBox(
-                            expanded = expandedChildGender,
-                            onExpandedChange = { expandedChildGender = it },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            OutlinedTextField(
-                                value = c.gender.ifBlank { "Gender" },
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Gender") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedChildGender) },
-                                modifier = Modifier.fillMaxWidth().menuAnchor()
-                            )
-                            ExposedDropdownMenu(
-                                expanded = expandedChildGender,
-                                onDismissRequest = { expandedChildGender = false }
-                            ) {
+                        ExposedDropdownMenuBox(expanded = expandedChildGender, onExpandedChange = { expandedChildGender = it }, modifier = Modifier.weight(1f)) {
+                            OutlinedTextField(value = c.gender.ifBlank { "Gender" }, onValueChange = {}, readOnly = true,
+                                label = { Text("Gender") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedChildGender) },
+                                modifier = Modifier.fillMaxWidth().menuAnchor())
+                            ExposedDropdownMenu(expanded = expandedChildGender, onDismissRequest = { expandedChildGender = false }) {
                                 childGenderOptions.forEach { option ->
-                                    DropdownMenuItem(
-                                        text = { Text(option) },
-                                        onClick = {
-                                            children[index] = c.copy(gender = option)
-                                            expandedChildGender = false
-                                        }
-                                    )
+                                    DropdownMenuItem(text = { Text(option) }, onClick = {
+                                        children[index] = c.copy(gender = option)
+                                        expandedChildGender = false
+                                    })
                                 }
                             }
                         }
@@ -618,14 +534,8 @@ fun VmaxVIPScreen() {
             Column(modifier = Modifier.padding(12.dp)) {
                 Text("BOOKING OPTIONS", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) { 
-                        Checkbox(checked = autoUpgradation, onCheckedChange = { autoUpgradation = it })
-                        Text("Auto Upgradation") 
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) { 
-                        Checkbox(checked = confirmBerthsOnly, onCheckedChange = { confirmBerthsOnly = it })
-                        Text("Confirm Berths") 
-                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = autoUpgradation, onCheckedChange = { autoUpgradation = it }); Text("Auto Upgradation") }
+                    Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = confirmBerthsOnly, onCheckedChange = { confirmBerthsOnly = it }); Text("Confirm Berths") }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Insurance: ", fontSize = 14.sp)
@@ -661,9 +571,17 @@ fun VmaxVIPScreen() {
                     OutlinedTextField(value = coachId, onValueChange = { if (it.length <= 2) coachId = it.uppercase() }, 
                         label = { Text("Coach ID") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 }
-                OutlinedTextField(value = mobileNo, onValueChange = { if (it.length <= 10 && it.all { c -> c.isDigit() }) mobileNo = it }, 
-                    label = { Text("Mobile Number (Optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
-                    isError = mobileNo.isNotBlank() && mobileNo.length != 10)
+                OutlinedTextField(
+                    value = mobileNo, 
+                    onValueChange = { 
+                        if (it.length <= 10 && it.all { c -> c.isDigit() }) mobileNo = it 
+                    },
+                    label = { Text("Mobile Number (Optional)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = mobileNo.isNotBlank() && mobileNo.length != 10
+                )
             }
         }
         Spacer(modifier = Modifier.height(12.dp))
@@ -688,18 +606,9 @@ fun VmaxVIPScreen() {
                         label = { Text("UPI ID") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) { 
-                        Checkbox(checked = manualPayment, onCheckedChange = { manualPayment = it })
-                        Text("Manual Payment") 
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) { 
-                        Checkbox(checked = autofillOTP, onCheckedChange = { autofillOTP = it })
-                        Text("Auto OTP") 
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) { 
-                        Checkbox(checked = captchaAutofill, onCheckedChange = { captchaAutofill = it })
-                        Text("Auto Captcha") 
-                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = manualPayment, onCheckedChange = { manualPayment = it }); Text("Manual Payment") }
+                    Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = autofillOTP, onCheckedChange = { autofillOTP = it }); Text("Auto OTP") }
+                    Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = captchaAutofill, onCheckedChange = { captchaAutofill = it }); Text("Auto Captcha") }
                 }
             }
         }
@@ -711,7 +620,7 @@ fun VmaxVIPScreen() {
         Text(text = "SNIPER WILL FIRE AT $finalTriggerTime", color = Color(0xFFFF9800), fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(modifier = Modifier.height(12.dp))
 
-        // ARM/STOP BUTTON with ✅ FIX 2: Save original passengers (Male/Female), not formatted (M/F/T)
+        // ARM/STOP BUTTON
         Button(
             onClick = {
                 try {
@@ -747,7 +656,6 @@ fun VmaxVIPScreen() {
                     
                     val finalLatency = if (latency.isEmpty()) 150 else latency.toIntOrNull() ?: 150
                     
-                    // ✅ FIX 2: Save ORIGINAL passengers (Male/Female) - NOT formatted
                     sharedPrefs.edit().apply {
                         putString("TRAIN_NO", trainNumber)
                         putString("JOURNEY_DATE", journeyDate)
@@ -755,7 +663,7 @@ fun VmaxVIPScreen() {
                         putString("TRIGGER_TIME", triggerTime)
                         putString("TARGET_CLASS", selectedClass)
                         putString("QUOTA", selectedQuota)
-                        putString("PASSENGERS_JSON", Json.encodeToString(validPassengers))  // ✅ Original, not formatted
+                        putString("PASSENGERS_JSON", Json.encodeToString(validPassengers))
                         putString("CHILDREN_JSON", Json.encodeToString(children.filter { it.name.isNotBlank() }))
                         putBoolean("AUTO_UPGRADATION", autoUpgradation)
                         putBoolean("CONFIRM_BERTHS", confirmBerthsOnly)
@@ -772,7 +680,6 @@ fun VmaxVIPScreen() {
                         putBoolean("SNIPER_RUNNING", true)
                     }.apply()
                     
-                    // Format only for IRCTC task
                     val formattedPassengers = validPassengers.map { passenger ->
                         passenger.copy(gender = mapGenderToIRCTC(passenger.gender))
                     }
@@ -784,7 +691,7 @@ fun VmaxVIPScreen() {
                         travelClass = getTravelClassEnum(selectedClass),
                         quota = getQuotaEnum(selectedQuota),
                         journeyDate = journeyDate,
-                        passengers = formattedPassengers,  // Formatted for IRCTC (M/F/T)
+                        passengers = formattedPassengers,
                         children = children.filter { it.name.isNotBlank() },
                         bookingOption = getBookingOptionEnum(bookingOption),
                         autoUpgradation = autoUpgradation,
@@ -825,11 +732,95 @@ fun VmaxVIPScreen() {
             )
         ) {
             Text(
-                if (isSniperRunning) "STOP SNIPER" else "ARM THE SNIPER", 
-                fontWeight = FontWeight.Bold, 
+                if (isSniperRunning) "STOP SNIPER" else "ARM THE SNIPER",
+                fontWeight = FontWeight.Bold,
                 fontSize = 20.sp
             )
         }
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        // ⚡ INSTANT ATTACK BUTTON (Manual Trigger)
+        Button(
+            onClick = {
+                try {
+                    if (!isEnabled) {
+                        Toast.makeText(context, "Enable Accessibility Service first!", Toast.LENGTH_LONG).show()
+                        return@Button
+                    }
+                    if (trainNumber.length != 5 || !trainNumber.all { it.isDigit() }) {
+                        Toast.makeText(context, "Train number must be 5 digits!", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    if (!isValidDate(journeyDate)) {
+                        Toast.makeText(context, "Invalid journey date! Use DD-MM-YYYY format", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    
+                    val validPassengers = passengers.filter { it.name.isNotBlank() && it.age.isNotBlank() }
+                    if (validPassengers.isEmpty()) {
+                        Toast.makeText(context, "Fill at least one passenger with Name & Age!", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    
+                    val finalLatency = if (latency.isEmpty()) 150 else latency.toIntOrNull() ?: 150
+                    val finalTriggerTime = if (triggerTime.isBlank()) {
+                        if (listOf("1A","2A","3A","CC","3E","EC").contains(selectedClass)) "10:00:00" else "11:00:00"
+                    } else triggerTime
+                    
+                    val formattedPassengers = validPassengers.map { passenger ->
+                        passenger.copy(gender = mapGenderToIRCTC(passenger.gender))
+                    }
+                    
+                    val task = SniperTask(
+                        triggerTime = finalTriggerTime,
+                        msAdvance = finalLatency,
+                        trainNumber = trainNumber,
+                        travelClass = getTravelClassEnum(selectedClass),
+                        quota = getQuotaEnum(selectedQuota),
+                        journeyDate = journeyDate,
+                        passengers = formattedPassengers,
+                        children = children.filter { it.name.isNotBlank() },
+                        bookingOption = getBookingOptionEnum(bookingOption),
+                        autoUpgradation = autoUpgradation,
+                        confirmBerthsOnly = confirmBerthsOnly,
+                        insurance = insurance,
+                        coachPreferred = coachPreferred,
+                        coachId = coachId,
+                        mobileNo = mobileNo,
+                        payment = PaymentDetails(
+                            category = paymentCategory,
+                            upiId = upiId,
+                            manualPayment = manualPayment,
+                            autofillOTP = autofillOTP
+                        ),
+                        captchaAutofill = captchaAutofill
+                    )
+                    
+                    val intent = Intent(context, WorkflowEngine::class.java).apply {
+                        action = WorkflowEngine.ACTION_START_SNIPER
+                        putExtra(WorkflowEngine.EXTRA_TASK, task)
+                        putExtra("FORCE_ATTACK", true)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        context.startForegroundService(intent)
+                    } else {
+                        context.startService(intent)
+                    }
+                    isSniperRunning = true
+                    Toast.makeText(context, "⚡ INSTANT ATTACK ENGAGED! ⚡", Toast.LENGTH_LONG).show()
+                    
+                } catch (e: Exception) {
+                    Log.e("VMAX_MAIN", "Instant attack error: ${e.message}", e)
+                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            },
+            modifier = Modifier.fillMaxWidth().height(55.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE65100))
+        ) {
+            Text("⚡ INSTANT ATTACK (Manual Trigger)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        }
+        
         Spacer(modifier = Modifier.height(40.dp))
     }
 }
