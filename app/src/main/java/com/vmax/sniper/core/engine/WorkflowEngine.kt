@@ -87,10 +87,10 @@ class WorkflowEngine : AccessibilityService() {
     private val timestampFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
     private fun getCurrentTimestamp(): String = timestampFormat.format(Date(TimeSyncManager.currentTimeMillis()))
 
-    // ==================== PUBLIC API FOR CAPTCHA SOLVER ====================
+    // ==================== ✅ FIX 3 & 4: PUBLIC API FOR CAPTCHA SOLVER ====================
     fun getStableRoot(): AccessibilityNodeInfo? = rootInActiveWindow
 
-    // ✅ FIX: Changed from private to internal so CaptchaSolver can access
+    // ✅ FIX 3: Changed from private to internal so CaptchaSolver can access
     internal fun stableClick(node: AccessibilityNodeInfo): Boolean {
         var target: AccessibilityNodeInfo? = node
         while (target != null && !target.isClickable) {
