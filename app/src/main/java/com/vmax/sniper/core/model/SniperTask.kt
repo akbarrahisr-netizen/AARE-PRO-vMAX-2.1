@@ -26,7 +26,6 @@ data class SniperTask(
     val captchaAutofill: Boolean = true
 ) : Parcelable {
 
-    // ✅ Both methods available
     fun isReady(): Boolean = trainNumber.isNotBlank() && 
                               journeyDate.isNotBlank() && 
                               passengers.any { it.isValid() }
