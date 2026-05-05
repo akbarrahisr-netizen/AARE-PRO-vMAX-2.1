@@ -15,7 +15,7 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.clickable  // ✅ यह IMPORT जोड़ें
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -31,11 +31,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.lifecycleScope
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.vmax.sniper.core.engine.WorkflowEngine
 import com.vmax.sniper.core.model.*
-import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
@@ -43,11 +41,9 @@ import java.util.Calendar
 
 class MainActivity : ComponentActivity() {
     
-    // Broadcast Receiver for Service State Updates
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == WorkflowEngine.ACTION_SERVICE_STOPPED) {
-                // Update UI when service stops
                 getSharedPreferences("VMAX_DATA", Context.MODE_PRIVATE).edit()
                     .putBoolean("SNIPER_RUNNING", false).apply()
             }
@@ -57,7 +53,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Fix 1: Android 13+ Notification Permission
         val permissions = mutableListOf(
             Manifest.permission.RECEIVE_SMS,
             Manifest.permission.READ_SMS
@@ -67,7 +62,6 @@ class MainActivity : ComponentActivity() {
         }
         ActivityCompat.requestPermissions(this, permissions.toTypedArray(), 101)
         
-        // Register Broadcast Receiver
         LocalBroadcastManager.getInstance(this).registerReceiver(
             stateReceiver,
             IntentFilter(WorkflowEngine.ACTION_SERVICE_STOPPED)
@@ -150,14 +144,12 @@ fun VmaxVIPScreen() {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val sharedPrefs = context.getSharedPreferences("VMAX_DATA", Context.MODE_PRIVATE)
-    val scope = rememberCoroutineScope()
     
     var isEnabled by remember { mutableStateOf(isAccessibilityServiceEnabled(context)) }
     var isSniperRunning by remember { 
         mutableStateOf(sharedPrefs.getBoolean("SNIPER_RUNNING", false))
     }
     
-    // Fix 2: Check Battery Optimization on resume
     var isBatteryOptimizationIgnored by remember { mutableStateOf(false) }
     
     DisposableEffect(lifecycleOwner) {
@@ -166,7 +158,6 @@ fun VmaxVIPScreen() {
                 isEnabled = isAccessibilityServiceEnabled(context)
                 isSniperRunning = sharedPrefs.getBoolean("SNIPER_RUNNING", false)
                 
-                // Check battery optimization
                 val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
                 isBatteryOptimizationIgnored = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     powerManager.isIgnoringBatteryOptimizations(context.packageName)
@@ -180,6 +171,7 @@ fun VmaxVIPScreen() {
     var trainNumber by remember { mutableStateOf(sharedPrefs.getString("TRAIN_NO", "") ?: "") }
     var journeyDate by remember { mutableStateOf(sharedPrefs.getString("JOURNEY_DATE", getDefaultDate()) ?: getDefaultDate()) }
     var latency by remember { mutableStateOf(sharedPrefs.getString("LATENCY", "150") ?: "150") }
+    var triggerTime by remember { mutableStateOf(sharedPrefs.getString("TRIGGER_TIME", "") ?: "") }
     
     var selectedClass by remember { mutableStateOf(sharedPrefs.getString("TARGET_CLASS", "SL") ?: "SL") }
     var selectedQuota by remember { mutableStateOf(sharedPrefs.getString("QUOTA", "Tatkal") ?: "Tatkal") }
@@ -210,7 +202,6 @@ fun VmaxVIPScreen() {
     var expandedPayment by remember { mutableStateOf(false) }
     var expandedBookingOpt by remember { mutableStateOf(false) }
     
-    // Standard DatePickerDialog
     val datePickerDialog = remember {
         DatePickerDialog(
             context,
@@ -223,8 +214,17 @@ fun VmaxVIPScreen() {
         )
     }
     
-    // Load saved data using JSON
+    // ✅ FIXED: Load ALL saved data
     LaunchedEffect(Unit) {
+        // Load all text fields
+        trainNumber = sharedPrefs.getString("TRAIN_NO", "") ?: ""
+        journeyDate = sharedPrefs.getString("JOURNEY_DATE", getDefaultDate()) ?: getDefaultDate()
+        latency = sharedPrefs.getString("LATENCY", "150") ?: "150"
+        triggerTime = sharedPrefs.getString("TRIGGER_TIME", "") ?: ""
+        selectedClass = sharedPrefs.getString("TARGET_CLASS", "SL") ?: "SL"
+        selectedQuota = sharedPrefs.getString("QUOTA", "Tatkal") ?: "Tatkal"
+        
+        // Load passenger data
         val savedPassengersJson = sharedPrefs.getString("PASSENGERS_JSON", "")
         if (savedPassengersJson.isNullOrEmpty()) {
             if (passengers.isEmpty()) repeat(4) { passengers.add(PassengerData()) }
@@ -258,12 +258,11 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(12.dp))
         
-        // ✅ FIX: यहाँ clickable सही तरीके से उपयोग किया गया है
         if (!isBatteryOptimizationIgnored) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable {  // ✅ अब यह काम करेगा क्योंकि हमने import किया है
+                    .clickable {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                             val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                                 data = Uri.parse("package:${context.packageName}")
@@ -297,6 +296,16 @@ fun VmaxVIPScreen() {
                     placeholder = { Text("150") },
                     modifier = Modifier.fillMaxWidth(),
                     supportingText = { Text("100ms (5G) | 150ms (4G) | 200ms (Slow)", color = Color.Gray) }
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = triggerTime,
+                    onValueChange = { triggerTime = it },
+                    label = { Text("Fire Time (HH:MM:SS)") },
+                    placeholder = { Text("10:00:00 या 11:00:00 या 08:30:00") },
+                    modifier = Modifier.fillMaxWidth(),
+                    supportingText = { Text("खाली छोड़ो तो class के हिसाब से auto set होगा", color = Color.Gray) }
                 )
             }
         }
@@ -493,11 +502,12 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(20.dp))
 
-        val targetHour = if (listOf("1A", "2A", "3A", "CC", "3E", "EC").contains(selectedClass)) 10 else 11
-        Text(text = "SNIPER WILL FIRE AT $targetHour:00:00", color = Color(0xFFFF9800), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        val finalTriggerTime = if (triggerTime.isBlank()) {
+            if (listOf("1A","2A","3A","CC","3E","EC").contains(selectedClass)) "10:00:00" else "11:00:00"
+        } else triggerTime
+        Text(text = "SNIPER WILL FIRE AT $finalTriggerTime", color = Color(0xFFFF9800), fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(modifier = Modifier.height(12.dp))
 
-        // ARM/STOP Button with state persistence
         Button(
             onClick = {
                 if (isSniperRunning) {
@@ -534,6 +544,7 @@ fun VmaxVIPScreen() {
                     putString("TRAIN_NO", trainNumber)
                     putString("JOURNEY_DATE", journeyDate)
                     putString("LATENCY", if (latency.isEmpty()) "150" else latency)
+                    putString("TRIGGER_TIME", triggerTime)
                     putString("TARGET_CLASS", selectedClass)
                     putString("QUOTA", selectedQuota)
                     putString("PASSENGERS_JSON", Json.encodeToString(validPassengers))
@@ -543,7 +554,7 @@ fun VmaxVIPScreen() {
                 val finalLatency = if (latency.isEmpty()) 150 else latency.toIntOrNull() ?: 150
                 
                 val task = SniperTask(
-                    triggerTime = "$targetHour:00:00",
+                    triggerTime = finalTriggerTime,
                     msAdvance = finalLatency,
                     trainNumber = trainNumber,
                     travelClass = getTravelClassEnum(selectedClass),
@@ -577,7 +588,7 @@ fun VmaxVIPScreen() {
                     context.startService(intent)
                 }
                 isSniperRunning = true
-                Toast.makeText(context, "SNIPER ARMED for $targetHour:00:00!", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "SNIPER ARMED for $finalTriggerTime!", Toast.LENGTH_LONG).show()
             },
             modifier = Modifier.fillMaxWidth().height(65.dp),
             colors = ButtonDefaults.buttonColors(
