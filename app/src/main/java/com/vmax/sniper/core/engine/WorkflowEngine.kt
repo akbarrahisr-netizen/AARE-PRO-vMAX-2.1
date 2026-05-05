@@ -34,11 +34,11 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * VMAX ELITE - EVENT-DRIVEN STATE MACHINE v7.2.1
- * ✅ Production Ready | Compilation Safe | Zero Errors
+ * VMAX ELITE - EVENT-DRIVEN STATE MACHINE v7.3.0
+ * ✅ Smart Resume | Force Attack | Production Ready
  * 
  * @author VMAX Team
- * @version 7.2.1 FINAL COMPILATION FIX
+ * @version 7.3.0 FINAL
  */
 class WorkflowEngine : AccessibilityService() {
 
@@ -57,6 +57,7 @@ class WorkflowEngine : AccessibilityService() {
         
         const val ACTION_START_SNIPER = "com.vmax.sniper.START_SNIPER"
         const val EXTRA_TASK = "extra_task"
+        const val EXTRA_FORCE_ATTACK = "FORCE_ATTACK"
         const val ACTION_SERVICE_STOPPED = "com.vmax.sniper.SERVICE_STOPPED"
 
         object Timing {
@@ -184,7 +185,6 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // ✅ FIX 1: Enhanced visibility check - NO isEmpty() error
     private fun AccessibilityNodeInfo.isActuallyVisible(): Boolean {
         val bounds = Rect()
         getBoundsInScreen(bounds)
@@ -317,7 +317,7 @@ class WorkflowEngine : AccessibilityService() {
             withRoot { root -> safeFindById(root, IRCTC.NAME_INPUT)?.let { setTextFast(it, passenger.name) } }
             delay(Timing.FAST_MS)
             
-            withRoot { root -> safeFindById(root, IRCTC.AGE_INPUT)?.let { setTextFast(it, passenger.age) } }
+            withRoot { root -> safeFindById(root, IRCTC.AGE_INPUT)?.let { setTextFast(it, passenger.age.toString()) } }
             delay(Timing.FAST_MS)
             
             if (passenger.gender.isNotBlank()) {
@@ -470,12 +470,35 @@ class WorkflowEngine : AccessibilityService() {
         logDebug("💾 Form cache saved")
     }
 
-    // ✅ FIX 2: EVENT-DRIVEN STATE TRANSITIONS with full mutex protection
+    // ✅ SMART RESUME + FORCE ATTACK SUPPORT in onEvent
     private suspend fun onEvent() {
         stateLock.withLock {
             if (!isArmed.get()) return
             
             val currentScreen = getCurrentScreen()
+            
+            // ✅ SMART RESUME: Manually login kiye ho to wahan se start karo
+            if (currentStep == WorkflowStep.IDLE || currentStep == WorkflowStep.REFRESH_DONE) {
+                when (currentScreen) {
+                    "PASSENGER_FORM" -> {
+                        logDebug("🔄 Smart resume detected: Already on Passenger Form")
+                        currentStep = WorkflowStep.ATTACK_DONE
+                        fillPassengerForm()
+                        return
+                    }
+                    "REVIEW" -> {
+                        logDebug("🔄 Smart resume detected: Already on Review Screen")
+                        currentStep = WorkflowStep.REVIEW_READY
+                        // Don't return here, let it go to REVIEW_READY case
+                    }
+                    "PAYMENT" -> {
+                        logDebug("🔄 Smart resume detected: Already on Payment Screen")
+                        currentStep = WorkflowStep.PAYMENT_DONE
+                        // Let it go to PAYMENT_DONE case
+                    }
+                }
+            }
+            
             if (currentScreen == "REVIEW" && !screenLock.compareAndSet(false, true)) {
                 return
             }
@@ -575,7 +598,6 @@ class WorkflowEngine : AccessibilityService() {
     }
 
     // ==================== HELPER FUNCTIONS ====================
-    // ✅ FIX 3: Correct GestureResultCallback implementation
     internal fun setTextFast(node: AccessibilityNodeInfo, text: String) {
         node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
         val args = Bundle().apply {
@@ -591,7 +613,6 @@ class WorkflowEngine : AccessibilityService() {
             val longPressGesture = GestureDescription.Builder()
                 .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
                 .build()
-            // ✅ Correct callback implementation
             dispatchGesture(longPressGesture, object : GestureDescription.GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription?) {
                     logDebug("Gesture completed successfully")
@@ -631,6 +652,7 @@ class WorkflowEngine : AccessibilityService() {
         logDebug("✅ SERVICE ACTIVE")
     }
 
+    // ✅ UPDATED onStartCommand with FORCE_ATTACK support
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_START_SNIPER) {
             val task = if (Build.VERSION.SDK_INT >= 33) {
@@ -639,6 +661,9 @@ class WorkflowEngine : AccessibilityService() {
                 @Suppress("DEPRECATION")
                 intent.getParcelableExtra(EXTRA_TASK)
             }
+            
+            val forceAttack = intent.getBooleanExtra(EXTRA_FORCE_ATTACK, false)
+            
             if (task != null) {
                 activeTask.set(task)
                 saveFormCache(task)
@@ -647,30 +672,68 @@ class WorkflowEngine : AccessibilityService() {
                     softReset()
                     isArmed.set(true)
                     
-                    val parts = task.triggerTime.split(":")
-                    val targetHour = parts.getOrNull(0)?.toIntOrNull() ?: 10
-                    val targetMinute = parts.getOrNull(1)?.toIntOrNull() ?: 0
-                    val targetSecond = parts.getOrNull(2)?.toIntOrNull() ?: 0
-                    val advanceMs = task.msAdvance.toLong().coerceIn(120, 200)
-                    
-                    TimeSyncManager.syncTime()
-                    logDebug("🎯 Target: $targetHour:$targetMinute:$targetSecond")
-                    
-                    TimeSniper.scheduleFire(targetHour, targetMinute, targetSecond, advanceMs) {
-                        isArmed.set(true)
+                    if (forceAttack) {
+                        // ✅ IMMEDIATE ATTACK - No timer wait
+                        logDebug("🔥 FORCE ATTACK MODE - Starting immediately!")
                         mainScope.launch {
                             if (currentStep == WorkflowStep.IDLE) {
-                                withRoot { root ->
-                                    val searchNode = safeFindById(root, IRCTC.SEARCH_BTN) ?:
-                                                     safeFindByText(root, IRCTC.SEARCH_BTN_FALLBACK)
-                                    searchNode?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                                val currentScreen = getCurrentScreen()
+                                when (currentScreen) {
+                                    "PASSENGER_FORM" -> {
+                                        currentStep = WorkflowStep.ATTACK_DONE
+                                        fillPassengerForm()
+                                    }
+                                    "REVIEW" -> {
+                                        currentStep = WorkflowStep.REVIEW_READY
+                                        if (waitForStableReviewScreen()) {
+                                            if (solveCaptcha()) {
+                                                currentStep = WorkflowStep.CAPTCHA_SOLVED
+                                            }
+                                        }
+                                    }
+                                    "PAYMENT" -> {
+                                        currentStep = WorkflowStep.PAYMENT_DONE
+                                    }
+                                    else -> {
+                                        withRoot { root ->
+                                            val searchNode = safeFindById(root, IRCTC.SEARCH_BTN) ?:
+                                                             safeFindByText(root, IRCTC.SEARCH_BTN_FALLBACK)
+                                            searchNode?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                                        }
+                                        currentStep = WorkflowStep.REFRESH_DONE
+                                    }
                                 }
-                                currentStep = WorkflowStep.REFRESH_DONE
-                                logDebug("🔥 ATTACK MODE ENGAGED!")
+                                logDebug("⚡ FORCE ATTACK MODE ENGAGED!")
+                            }
+                        }
+                    } else {
+                        // Normal scheduled attack
+                        val parts = task.triggerTime.split(":")
+                        val targetHour = parts.getOrNull(0)?.toIntOrNull() ?: 10
+                        val targetMinute = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                        val targetSecond = parts.getOrNull(2)?.toIntOrNull() ?: 0
+                        val advanceMs = task.msAdvance.toLong().coerceIn(120, 200)
+                        
+                        TimeSyncManager.syncTime()
+                        logDebug("🎯 Target: $targetHour:$targetMinute:$targetSecond")
+                        
+                        TimeSniper.scheduleFire(targetHour, targetMinute, targetSecond, advanceMs) {
+                            isArmed.set(true)
+                            mainScope.launch {
+                                if (currentStep == WorkflowStep.IDLE) {
+                                    withRoot { root ->
+                                        val searchNode = safeFindById(root, IRCTC.SEARCH_BTN) ?:
+                                                         safeFindByText(root, IRCTC.SEARCH_BTN_FALLBACK)
+                                        searchNode?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                                    }
+                                    currentStep = WorkflowStep.REFRESH_DONE
+                                    logDebug("🔥 ATTACK MODE ENGAGED!")
+                                }
                             }
                         }
                     }
                 }
+                logDebug("⏳ Armed and waiting for ${task.triggerTime}")
             }
         }
         return START_STICKY
