@@ -1,92 +1,39 @@
-// ==================== ELITE TUNED ENGINE ====================
+package com.vmax.sniper.core.engine
 
-private suspend fun smartAttackWithLock(isAc: Boolean): Boolean = coroutineScope {
-    // 1. Scroll Stabilization (UI Render Fix)
-    ensureListIsReady()
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
-    val root = rootInActiveWindow ?: return@coroutineScope false
-    
-    // 2. LOCAL Node Cache (Safe from Stale References)
-    val localNodeCache = buildLocalNodeCache(root)
-    
-    val snapshot = TrainPriorityManager.getCurrentAvailabilityMap(isAc)
-    val targets = TrainPriorityManager.getFullAttackPlan(isAc, snapshot)
-    
-    if (targets.isEmpty()) return@coroutineScope false
+object AttackLock {
 
-    val winnerDeferred = CompletableDeferred<Boolean>()
-    val attackJobs = mutableListOf<Job>()
-    
-    for (train in targets) {
-        if (AttackLock.isLocked()) break
+    private val locked = AtomicBoolean(false)
 
-        val classOrder = TrainPriorityManager.getSmartClassOrder(train, isAc, snapshot)
-        val bestClass = classOrder.firstOrNull() ?: continue
+    private data class Winner(
+        val train: String,
+        val className: String
+    )
 
-        val job = launch(Dispatchers.Default) {
-            if (!isActive || AttackLock.isLocked()) return@launch
-            
-            // 3. Fast Context-Aware Cache Lookup
-            val trainNode = localNodeCache[train.trainNumber] ?: return@launch
-            
-            if (executeEliteStrike(trainNode, train.trainNumber, bestClass)) {
-                runCatching { winnerDeferred.complete(true) }
-            }
+    private val winnerRef = AtomicReference<Winner?>(null)
+
+    // ✅ ATOMIC LOCK: Single Source of Truth
+    fun tryLock(train: String, className: String): Boolean {
+        val acquired = locked.compareAndSet(false, true)
+
+        if (acquired) {
+            winnerRef.set(Winner(train, className))
         }
-        attackJobs.add(job)
+
+        return acquired
     }
 
-    val result = withTimeoutOrNull(250L) { winnerDeferred.await() } ?: false
-    attackJobs.forEach { it.cancel() }
-    return@coroutineScope result
-}
+    fun isLocked(): Boolean = locked.get()
 
-// ==================== FAST CHILD SCAN (Zero BFS) ====================
-private fun findClassNodeElite(trainNode: AccessibilityNodeInfo, className: String): AccessibilityNodeInfo? {
-    for (i in 0 until trainNode.childCount) {
-        val child = trainNode.getChild(i) ?: continue
-        val text = child.text?.toString()?.uppercase() ?: ""
-        if (text.contains(className)) return child
+    fun getWinner(): Pair<String?, String?> {
+        val w = winnerRef.get()
+        return w?.train to w?.className
     }
-    return null
-}
 
-// ==================== SURGICAL STRIKE LOGIC ====================
-private suspend fun executeEliteStrike(trainNode: AccessibilityNodeInfo, trainNo: String, className: String): Boolean {
-    // BFS हटाकर Direct Child Scan का इस्तेमाल
-    val classNode = findClassNodeElite(trainNode, className) ?: return false
-    
-    val weight = getSmartWeight(classNode.text?.toString() ?: "", className)
-    TrainPriorityManager.updateAvailability(trainNo, className, weight)
-
-    // Threshold tightened to 20 as suggested
-    if (weight <= 20) {
-        if (AttackLock.tryLock(trainNo, className)) {
-            
-            // Micro-latency tuning (6ms for premium classes)
-            val delayMs = if (className.contains("2A")) 6L else 8L
-            delay(delayMs) 
-            
-            val bookBtn = findClassNodeElite(classNode, "BOOK NOW") ?: findClassNodeElite(classNode, "अभी बुक करें")
-            
-            if (bookBtn != null && bookBtn.isVisibleToUser) {
-                val success = stableClick(bookBtn)
-                
-                // Already Clicked Guard (Retry allow if failed)
-                if (!success) {
-                    AttackLock.reset()
-                }
-                return success
-            }
-        }
+    fun reset() {
+        winnerRef.set(null)
+        locked.set(false)
     }
-    return false
-}
-
-// ==================== UI STABILIZER ====================
-private suspend fun ensureListIsReady() {
-    performGlobalAction(GLOBAL_ACTION_SCROLL_FORWARD)
-    delay(20)
-    performGlobalAction(GLOBAL_ACTION_SCROLL_BACKWARD)
-    delay(20) // UI को रेंडर होने का समय दें
 }
