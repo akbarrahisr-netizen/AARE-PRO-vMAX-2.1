@@ -27,7 +27,7 @@ data class SniperTask(
 ) : Parcelable {
 
     fun isReady(): Boolean = trainNumber.isNotBlank() && 
-                              journeyDate.isNotBlank() && 
+                              journeyDate.isNotBlank() &&
                               passengers.any { it.isValid() }
 
     val isFilled: Boolean
