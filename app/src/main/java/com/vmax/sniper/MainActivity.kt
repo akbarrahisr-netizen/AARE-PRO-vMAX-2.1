@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -124,7 +125,10 @@ fun getTravelClassEnum(className: String): TravelClass {
 fun getQuotaEnum(quotaName: String): Quota {
     return when (quotaName) {
         "Tatkal" -> Quota.TATKAL
+        "Premium Tatkal" -> Quota.PREMIUM_TATKAL
         "General" -> Quota.GENERAL
+        "Ladies" -> Quota.LADIES
+        "Lower Berth" -> Quota.LOWER_BERTH
         else -> Quota.TATKAL
     }
 }
@@ -135,6 +139,15 @@ fun getBookingOptionEnum(option: Int): BookingOption {
         2 -> BookingOption.ONE_LOWER_BERTH
         3 -> BookingOption.TWO_LOWER_BERTHS
         else -> BookingOption.NONE
+    }
+}
+
+fun mapGenderToIRCTC(gender: String): String {
+    return when (gender.lowercase()) {
+        "male" -> "M"
+        "female" -> "F"
+        "transgender" -> "T"
+        else -> "M"
     }
 }
 
@@ -176,26 +189,29 @@ fun VmaxVIPScreen() {
     var selectedClass by remember { mutableStateOf(sharedPrefs.getString("TARGET_CLASS", "SL") ?: "SL") }
     var selectedQuota by remember { mutableStateOf(sharedPrefs.getString("QUOTA", "Tatkal") ?: "Tatkal") }
     val classes = listOf("1A", "2A", "3A", "CC", "3E", "EC", "SL", "FC", "2S")
-    val quotas = listOf("Tatkal", "General")
+    val quotas = listOf("General", "Tatkal", "Premium Tatkal", "Ladies", "Lower Berth")
     
     val passengers = remember { mutableStateListOf<PassengerData>() }
     val children = remember { mutableStateListOf<ChildData>() }
     
-    var autoUpgradation by remember { mutableStateOf(false) }
-    var confirmBerthsOnly by remember { mutableStateOf(false) }
-    var insurance by remember { mutableStateOf(true) }
-    var bookingOption by remember { mutableStateOf(0) }
+    var autoUpgradation by remember { mutableStateOf(sharedPrefs.getBoolean("AUTO_UPGRADATION", false)) }
+    var confirmBerthsOnly by remember { mutableStateOf(sharedPrefs.getBoolean("CONFIRM_BERTHS", false)) }
+    var insurance by remember { mutableStateOf(sharedPrefs.getBoolean("INSURANCE", true)) }
+    var bookingOption by remember { mutableStateOf(sharedPrefs.getInt("BOOKING_OPTION", 0)) }
     val bookingOptions = listOf("None", "Same Coach", "1 Lower Berth", "2 Lower Berths")
     
-    var coachPreferred by remember { mutableStateOf(false) }
-    var coachId by remember { mutableStateOf("") }
-    var mobileNo by remember { mutableStateOf("") }
+    var coachPreferred by remember { mutableStateOf(sharedPrefs.getBoolean("COACH_PREFERRED", false)) }
+    var coachId by remember { mutableStateOf(sharedPrefs.getString("COACH_ID", "") ?: "") }
+    var mobileNo by remember { mutableStateOf(sharedPrefs.getString("MOBILE_NO", "") ?: "") }
     
-    var paymentCategory by remember { mutableStateOf(PaymentCategory.BHIM_UPI) }
-    var upiId by remember { mutableStateOf("") }
-    var manualPayment by remember { mutableStateOf(false) }
-    var autofillOTP by remember { mutableStateOf(true) }
-    var captchaAutofill by remember { mutableStateOf(true) }
+    var paymentCategory by remember { 
+        val saved = sharedPrefs.getString("PAYMENT_CATEGORY", "BHIM_UPI")
+        mutableStateOf(try { PaymentCategory.valueOf(saved ?: "BHIM_UPI") } catch (e: Exception) { PaymentCategory.BHIM_UPI })
+    }
+    var upiId by remember { mutableStateOf(sharedPrefs.getString("UPI_ID", "") ?: "") }
+    var manualPayment by remember { mutableStateOf(sharedPrefs.getBoolean("MANUAL_PAYMENT", false)) }
+    var autofillOTP by remember { mutableStateOf(sharedPrefs.getBoolean("AUTOFILL_OTP", true)) }
+    var captchaAutofill by remember { mutableStateOf(sharedPrefs.getBoolean("CAPTCHA_AUTOFILL", true)) }
     
     var expandedClass by remember { mutableStateOf(false) }
     var expandedQuota by remember { mutableStateOf(false) }
@@ -207,6 +223,7 @@ fun VmaxVIPScreen() {
             context,
             { _, year, month, dayOfMonth ->
                 journeyDate = String.format("%02d-%02d-%04d", dayOfMonth, month + 1, year)
+                sharedPrefs.edit().putString("JOURNEY_DATE", journeyDate).apply()
             },
             Calendar.getInstance().get(Calendar.YEAR),
             Calendar.getInstance().get(Calendar.MONTH),
@@ -214,30 +231,68 @@ fun VmaxVIPScreen() {
         )
     }
     
-    // ✅ FIXED: Load ALL saved data
+    // Load ALL saved data
     LaunchedEffect(Unit) {
-        // Load all text fields
         trainNumber = sharedPrefs.getString("TRAIN_NO", "") ?: ""
         journeyDate = sharedPrefs.getString("JOURNEY_DATE", getDefaultDate()) ?: getDefaultDate()
         latency = sharedPrefs.getString("LATENCY", "150") ?: "150"
         triggerTime = sharedPrefs.getString("TRIGGER_TIME", "") ?: ""
         selectedClass = sharedPrefs.getString("TARGET_CLASS", "SL") ?: "SL"
         selectedQuota = sharedPrefs.getString("QUOTA", "Tatkal") ?: "Tatkal"
+        autoUpgradation = sharedPrefs.getBoolean("AUTO_UPGRADATION", false)
+        confirmBerthsOnly = sharedPrefs.getBoolean("CONFIRM_BERTHS", false)
+        insurance = sharedPrefs.getBoolean("INSURANCE", true)
+        bookingOption = sharedPrefs.getInt("BOOKING_OPTION", 0)
+        coachPreferred = sharedPrefs.getBoolean("COACH_PREFERRED", false)
+        coachId = sharedPrefs.getString("COACH_ID", "") ?: ""
+        mobileNo = sharedPrefs.getString("MOBILE_NO", "") ?: ""
         
-        // Load passenger data
+        val savedPayment = sharedPrefs.getString("PAYMENT_CATEGORY", "BHIM_UPI")
+        paymentCategory = try {
+            PaymentCategory.valueOf(savedPayment ?: "BHIM_UPI")
+        } catch (e: Exception) { PaymentCategory.BHIM_UPI }
+        upiId = sharedPrefs.getString("UPI_ID", "") ?: ""
+        manualPayment = sharedPrefs.getBoolean("MANUAL_PAYMENT", false)
+        autofillOTP = sharedPrefs.getBoolean("AUTOFILL_OTP", true)
+        captchaAutofill = sharedPrefs.getBoolean("CAPTCHA_AUTOFILL", true)
+
+        // Load passengers
         val savedPassengersJson = sharedPrefs.getString("PASSENGERS_JSON", "")
-        if (savedPassengersJson.isNullOrEmpty()) {
-            if (passengers.isEmpty()) repeat(4) { passengers.add(PassengerData()) }
-            if (children.isEmpty()) repeat(2) { children.add(ChildData()) }
-        } else {
+        if (!savedPassengersJson.isNullOrEmpty()) {
             try {
                 val parsed = Json.decodeFromString<List<PassengerData>>(savedPassengersJson)
                 passengers.clear()
                 passengers.addAll(parsed)
-                if (passengers.isEmpty()) repeat(4) { passengers.add(PassengerData()) }
-            } catch (e: Exception) {
-                repeat(4) { passengers.add(PassengerData()) }
-            }
+            } catch (e: Exception) { }
+        }
+        if (passengers.isEmpty()) passengers.add(PassengerData())
+
+        // Load children
+        val savedChildrenJson = sharedPrefs.getString("CHILDREN_JSON", "")
+        if (!savedChildrenJson.isNullOrEmpty()) {
+            try {
+                val parsed = Json.decodeFromString<List<ChildData>>(savedChildrenJson)
+                children.clear()
+                children.addAll(parsed)
+            } catch (e: Exception) { }
+        }
+    }
+    
+    // Real-time auto-save for passengers
+    LaunchedEffect(passengers.toList()) {
+        if (passengers.isNotEmpty()) {
+            sharedPrefs.edit()
+                .putString("PASSENGERS_JSON", Json.encodeToString(passengers.toList()))
+                .apply()
+        }
+    }
+    
+    // Real-time auto-save for children
+    LaunchedEffect(children.toList()) {
+        if (children.isNotEmpty()) {
+            sharedPrefs.edit()
+                .putString("CHILDREN_JSON", Json.encodeToString(children.toList()))
+                .apply()
         }
     }
 
@@ -282,6 +337,7 @@ fun VmaxVIPScreen() {
             Spacer(modifier = Modifier.height(12.dp))
         }
 
+        // TIMING OPTIMIZATION CARD
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Text("TIMING OPTIMIZATION", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
@@ -303,20 +359,22 @@ fun VmaxVIPScreen() {
                     value = triggerTime,
                     onValueChange = { triggerTime = it },
                     label = { Text("Fire Time (HH:MM:SS)") },
-                    placeholder = { Text("10:00:00 या 11:00:00 या 08:30:00") },
+                    placeholder = { Text("10:00:00 या 11:00:00") },
                     modifier = Modifier.fillMaxWidth(),
-                    supportingText = { Text("खाली छोड़ो तो class के हिसाब से auto set होगा", color = Color.Gray) }
+                    supportingText = { Text("खाली छोड़ो तो auto set होगा", color = Color.Gray) }
                 )
             }
         }
         Spacer(modifier = Modifier.height(12.dp))
 
+        // JOURNEY DETAILS CARD
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("JOURNEY DETAILS", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
                 
-                OutlinedTextField(value = trainNumber, onValueChange = { if (it.length <= 5 && it.all { c -> c.isDigit() }) trainNumber = it },
-                    label = { Text("Train Number (5 digits)") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
+                OutlinedTextField(value = trainNumber, onValueChange = { 
+                    if (it.length <= 5 && it.all { c -> c.isDigit() }) trainNumber = it 
+                }, label = { Text("Train Number (5 digits)") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
                     isError = trainNumber.isNotBlank() && trainNumber.length != 5)
                 
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -338,6 +396,7 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(12.dp))
 
+        // CLASS & QUOTA CARD
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("CLASS & QUOTA", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
@@ -367,9 +426,23 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(12.dp))
 
+        // PASSENGERS SECTION WITH DROPDOWNS
         Text("PASSENGERS (Adult)", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.align(Alignment.Start))
+        
         passengers.forEachIndexed { index, p ->
-            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF2A2A35)), modifier = Modifier.padding(vertical = 6.dp).fillMaxWidth()) {
+            // ✅ FIX 1: remember(index) to prevent state reset on recomposition
+            var expandedGender by remember(index) { mutableStateOf(false) }
+            var expandedBerth by remember(index) { mutableStateOf(false) }
+            var expandedMeal by remember(index) { mutableStateOf(false) }
+            
+            val genderOptions = listOf("Male", "Female", "Transgender")
+            val berthOptions = listOf("LOWER", "MIDDLE", "UPPER", "SIDE LOWER", "SIDE UPPER", "WINDOW SIDE", "CABIN", "COUPE")
+            val mealOptions = listOf("VEG", "NON VEG", "JAIN MEAL", "DIABETIC VEG", "DIABETIC NON VEG")
+            
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF2A2A35)), 
+                modifier = Modifier.padding(vertical = 6.dp).fillMaxWidth()
+            ) {
                 Column(modifier = Modifier.padding(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("${index + 1}.", color = Color(0xFFFF9800), fontWeight = FontWeight.Bold, modifier = Modifier.width(25.dp))
@@ -378,16 +451,101 @@ fun VmaxVIPScreen() {
                         Spacer(modifier = Modifier.width(8.dp))
                         OutlinedTextField(value = p.age, onValueChange = { 
                             if (it.isEmpty() || it.all { c -> c.isDigit() }) passengers[index] = p.copy(age = it) 
-                        }, 
-                            label = { Text("Age") }, modifier = Modifier.weight(1f), singleLine = true)
+                        }, label = { Text("Age") }, modifier = Modifier.weight(1f), singleLine = true)
                     }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(value = p.gender, onValueChange = { passengers[index] = p.copy(gender = it) }, 
-                            label = { Text("Gender (M/F/T)") }, modifier = Modifier.weight(1f), singleLine = true)
-                        OutlinedTextField(value = p.berthPreference, onValueChange = { passengers[index] = p.copy(berthPreference = it) }, 
-                            label = { Text("Berth") }, modifier = Modifier.weight(1f), singleLine = true)
-                        OutlinedTextField(value = p.meal, onValueChange = { passengers[index] = p.copy(meal = it) }, 
-                            label = { Text("Meal") }, modifier = Modifier.weight(1f), singleLine = true)
+                        // GENDER DROPDOWN
+                        ExposedDropdownMenuBox(
+                            expanded = expandedGender,
+                            onExpandedChange = { expandedGender = it },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            OutlinedTextField(
+                                value = p.gender.ifBlank { "Select Gender" },
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Gender") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedGender) },
+                                modifier = Modifier.fillMaxWidth().menuAnchor()
+                            )
+                            ExposedDropdownMenu(
+                                expanded = expandedGender,
+                                onDismissRequest = { expandedGender = false }
+                            ) {
+                                genderOptions.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = { Text(option) },
+                                        onClick = {
+                                            passengers[index] = p.copy(gender = option)
+                                            expandedGender = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        // BERTH DROPDOWN
+                        ExposedDropdownMenuBox(
+                            expanded = expandedBerth,
+                            onExpandedChange = { expandedBerth = it },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            OutlinedTextField(
+                                value = p.berthPreference.ifBlank { "Select Berth" },
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Berth") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedBerth) },
+                                modifier = Modifier.fillMaxWidth().menuAnchor()
+                            )
+                            ExposedDropdownMenu(
+                                expanded = expandedBerth,
+                                onDismissRequest = { expandedBerth = false }
+                            ) {
+                                berthOptions.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = { Text(option) },
+                                        onClick = {
+                                            passengers[index] = p.copy(berthPreference = option)
+                                            expandedBerth = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        // MEAL DROPDOWN
+                        ExposedDropdownMenuBox(
+                            expanded = expandedMeal,
+                            onExpandedChange = { expandedMeal = it },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            OutlinedTextField(
+                                value = p.meal.ifBlank { "Select Meal" },
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Meal") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedMeal) },
+                                modifier = Modifier.fillMaxWidth().menuAnchor()
+                            )
+                            ExposedDropdownMenu(
+                                expanded = expandedMeal,
+                                onDismissRequest = { expandedMeal = false }
+                            ) {
+                                mealOptions.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = { Text(option) },
+                                        onClick = {
+                                            passengers[index] = p.copy(meal = option)
+                                            expandedMeal = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -400,8 +558,13 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(12.dp))
 
+        // INFANTS SECTION
         Text("INFANTS (Optional)", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.align(Alignment.Start))
         children.forEachIndexed { index, c ->
+            // ✅ FIX 1: remember(index) for child dropdown as well
+            var expandedChildGender by remember(index) { mutableStateOf(false) }
+            val childGenderOptions = listOf("Male", "Female")
+            
             Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF2A2A35)), modifier = Modifier.padding(vertical = 4.dp).fillMaxWidth()) {
                 Column(modifier = Modifier.padding(10.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -409,12 +572,40 @@ fun VmaxVIPScreen() {
                             label = { Text("Infant Name") }, modifier = Modifier.weight(2f), singleLine = true)
                         OutlinedTextField(value = c.ageRange, onValueChange = { children[index] = c.copy(ageRange = it) }, 
                             label = { Text("Age (1-4)") }, modifier = Modifier.weight(1f), singleLine = true)
-                        OutlinedTextField(value = c.gender, onValueChange = { children[index] = c.copy(gender = it) }, 
-                            label = { Text("Gender") }, modifier = Modifier.weight(1f), singleLine = true)
+                        
+                        ExposedDropdownMenuBox(
+                            expanded = expandedChildGender,
+                            onExpandedChange = { expandedChildGender = it },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            OutlinedTextField(
+                                value = c.gender.ifBlank { "Gender" },
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Gender") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedChildGender) },
+                                modifier = Modifier.fillMaxWidth().menuAnchor()
+                            )
+                            ExposedDropdownMenu(
+                                expanded = expandedChildGender,
+                                onDismissRequest = { expandedChildGender = false }
+                            ) {
+                                childGenderOptions.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = { Text(option) },
+                                        onClick = {
+                                            children[index] = c.copy(gender = option)
+                                            expandedChildGender = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
+        
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { children.add(ChildData()) }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6B21A8))) { Text("+ Add Infant") }
             Button(onClick = { if (children.isNotEmpty()) children.removeAt(children.size - 1) }, 
@@ -422,6 +613,7 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(12.dp))
 
+        // BOOKING OPTIONS CARD
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Text("BOOKING OPTIONS", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
@@ -457,6 +649,7 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(12.dp))
 
+        // COACH & MOBILE CARD
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Text("COACH & MOBILE", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
@@ -475,6 +668,7 @@ fun VmaxVIPScreen() {
         }
         Spacer(modifier = Modifier.height(12.dp))
 
+        // PAYMENT METHOD CARD
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Text("PAYMENT METHOD", color = Color(0xFF7E57C2), fontWeight = FontWeight.Bold)
@@ -494,9 +688,18 @@ fun VmaxVIPScreen() {
                         label = { Text("UPI ID") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = manualPayment, onCheckedChange = { manualPayment = it }); Text("Manual Payment") }
-                    Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = autofillOTP, onCheckedChange = { autofillOTP = it }); Text("Auto OTP") }
-                    Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = captchaAutofill, onCheckedChange = { captchaAutofill = it }); Text("Auto Captcha") }
+                    Row(verticalAlignment = Alignment.CenterVertically) { 
+                        Checkbox(checked = manualPayment, onCheckedChange = { manualPayment = it })
+                        Text("Manual Payment") 
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) { 
+                        Checkbox(checked = autofillOTP, onCheckedChange = { autofillOTP = it })
+                        Text("Auto OTP") 
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) { 
+                        Checkbox(checked = captchaAutofill, onCheckedChange = { captchaAutofill = it })
+                        Text("Auto Captcha") 
+                    }
                 }
             }
         }
@@ -508,87 +711,113 @@ fun VmaxVIPScreen() {
         Text(text = "SNIPER WILL FIRE AT $finalTriggerTime", color = Color(0xFFFF9800), fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(modifier = Modifier.height(12.dp))
 
+        // ARM/STOP BUTTON with ✅ FIX 2: Save original passengers (Male/Female), not formatted (M/F/T)
         Button(
             onClick = {
-                if (isSniperRunning) {
-                    isSniperRunning = false
-                    sharedPrefs.edit().putBoolean("SNIPER_RUNNING", false).apply()
-                    Toast.makeText(context, "Sniper Stopped!", Toast.LENGTH_SHORT).show()
-                    return@Button
+                try {
+                    if (isSniperRunning) {
+                        isSniperRunning = false
+                        sharedPrefs.edit().putBoolean("SNIPER_RUNNING", false).apply()
+                        Toast.makeText(context, "Sniper Stopped!", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    
+                    if (!isEnabled) {
+                        Toast.makeText(context, "Enable Accessibility Service first!", Toast.LENGTH_LONG).show()
+                        return@Button
+                    }
+                    if (trainNumber.length != 5 || !trainNumber.all { it.isDigit() }) {
+                        Toast.makeText(context, "Train number must be 5 digits!", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    if (!isValidDate(journeyDate)) {
+                        Toast.makeText(context, "Invalid journey date! Use DD-MM-YYYY format", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    if (mobileNo.isNotBlank() && mobileNo.length != 10) {
+                        Toast.makeText(context, "Mobile number must be 10 digits!", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    
+                    val validPassengers = passengers.filter { it.name.isNotBlank() && it.age.isNotBlank() }
+                    if (validPassengers.isEmpty()) {
+                        Toast.makeText(context, "Fill at least one passenger with Name & Age!", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    
+                    val finalLatency = if (latency.isEmpty()) 150 else latency.toIntOrNull() ?: 150
+                    
+                    // ✅ FIX 2: Save ORIGINAL passengers (Male/Female) - NOT formatted
+                    sharedPrefs.edit().apply {
+                        putString("TRAIN_NO", trainNumber)
+                        putString("JOURNEY_DATE", journeyDate)
+                        putString("LATENCY", finalLatency.toString())
+                        putString("TRIGGER_TIME", triggerTime)
+                        putString("TARGET_CLASS", selectedClass)
+                        putString("QUOTA", selectedQuota)
+                        putString("PASSENGERS_JSON", Json.encodeToString(validPassengers))  // ✅ Original, not formatted
+                        putString("CHILDREN_JSON", Json.encodeToString(children.filter { it.name.isNotBlank() }))
+                        putBoolean("AUTO_UPGRADATION", autoUpgradation)
+                        putBoolean("CONFIRM_BERTHS", confirmBerthsOnly)
+                        putBoolean("INSURANCE", insurance)
+                        putInt("BOOKING_OPTION", bookingOption)
+                        putBoolean("COACH_PREFERRED", coachPreferred)
+                        putString("COACH_ID", coachId)
+                        putString("MOBILE_NO", mobileNo)
+                        putString("PAYMENT_CATEGORY", paymentCategory.name)
+                        putString("UPI_ID", upiId)
+                        putBoolean("MANUAL_PAYMENT", manualPayment)
+                        putBoolean("AUTOFILL_OTP", autofillOTP)
+                        putBoolean("CAPTCHA_AUTOFILL", captchaAutofill)
+                        putBoolean("SNIPER_RUNNING", true)
+                    }.apply()
+                    
+                    // Format only for IRCTC task
+                    val formattedPassengers = validPassengers.map { passenger ->
+                        passenger.copy(gender = mapGenderToIRCTC(passenger.gender))
+                    }
+                    
+                    val task = SniperTask(
+                        triggerTime = finalTriggerTime,
+                        msAdvance = finalLatency,
+                        trainNumber = trainNumber,
+                        travelClass = getTravelClassEnum(selectedClass),
+                        quota = getQuotaEnum(selectedQuota),
+                        journeyDate = journeyDate,
+                        passengers = formattedPassengers,  // Formatted for IRCTC (M/F/T)
+                        children = children.filter { it.name.isNotBlank() },
+                        bookingOption = getBookingOptionEnum(bookingOption),
+                        autoUpgradation = autoUpgradation,
+                        confirmBerthsOnly = confirmBerthsOnly,
+                        insurance = insurance,
+                        coachPreferred = coachPreferred,
+                        coachId = coachId,
+                        mobileNo = mobileNo,
+                        payment = PaymentDetails(
+                            category = paymentCategory,
+                            upiId = upiId,
+                            manualPayment = manualPayment,
+                            autofillOTP = autofillOTP
+                        ),
+                        captchaAutofill = captchaAutofill
+                    )
+                    
+                    val intent = Intent(context, WorkflowEngine::class.java).apply {
+                        action = WorkflowEngine.ACTION_START_SNIPER
+                        putExtra(WorkflowEngine.EXTRA_TASK, task)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        context.startForegroundService(intent)
+                    } else {
+                        context.startService(intent)
+                    }
+                    isSniperRunning = true
+                    Toast.makeText(context, "SNIPER ARMED for $finalTriggerTime!", Toast.LENGTH_LONG).show()
+                    
+                } catch (e: Exception) {
+                    Log.e("VMAX_MAIN", "Error arming sniper: ${e.message}", e)
+                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
                 }
-                
-                if (!isEnabled) {
-                    Toast.makeText(context, "Enable Accessibility Service first!", Toast.LENGTH_LONG).show()
-                    return@Button
-                }
-                if (trainNumber.length != 5 || !trainNumber.all { it.isDigit() }) {
-                    Toast.makeText(context, "Train number must be 5 digits!", Toast.LENGTH_SHORT).show()
-                    return@Button
-                }
-                if (!isValidDate(journeyDate)) {
-                    Toast.makeText(context, "Invalid journey date! Use DD-MM-YYYY format", Toast.LENGTH_SHORT).show()
-                    return@Button
-                }
-                if (mobileNo.isNotBlank() && mobileNo.length != 10) {
-                    Toast.makeText(context, "Mobile number must be 10 digits!", Toast.LENGTH_SHORT).show()
-                    return@Button
-                }
-                
-                val validPassengers = passengers.filter { it.name.isNotBlank() && it.age.isNotBlank() }
-                if (validPassengers.isEmpty()) {
-                    Toast.makeText(context, "Fill at least one passenger with Name & Age!", Toast.LENGTH_SHORT).show()
-                    return@Button
-                }
-                
-                sharedPrefs.edit().apply {
-                    putString("TRAIN_NO", trainNumber)
-                    putString("JOURNEY_DATE", journeyDate)
-                    putString("LATENCY", if (latency.isEmpty()) "150" else latency)
-                    putString("TRIGGER_TIME", triggerTime)
-                    putString("TARGET_CLASS", selectedClass)
-                    putString("QUOTA", selectedQuota)
-                    putString("PASSENGERS_JSON", Json.encodeToString(validPassengers))
-                    putBoolean("SNIPER_RUNNING", true)
-                }.apply()
-                
-                val finalLatency = if (latency.isEmpty()) 150 else latency.toIntOrNull() ?: 150
-                
-                val task = SniperTask(
-                    triggerTime = finalTriggerTime,
-                    msAdvance = finalLatency,
-                    trainNumber = trainNumber,
-                    travelClass = getTravelClassEnum(selectedClass),
-                    quota = getQuotaEnum(selectedQuota),
-                    journeyDate = journeyDate,
-                    passengers = validPassengers,
-                    children = children.filter { it.name.isNotBlank() },
-                    bookingOption = getBookingOptionEnum(bookingOption),
-                    autoUpgradation = autoUpgradation,
-                    confirmBerthsOnly = confirmBerthsOnly,
-                    insurance = insurance,
-                    coachPreferred = coachPreferred,
-                    coachId = coachId,
-                    mobileNo = mobileNo,
-                    payment = PaymentDetails(
-                        category = paymentCategory,
-                        upiId = upiId,
-                        manualPayment = manualPayment,
-                        autofillOTP = autofillOTP
-                    ),
-                    captchaAutofill = captchaAutofill
-                )
-                
-                val intent = Intent(context, WorkflowEngine::class.java).apply {
-                    action = WorkflowEngine.ACTION_START_SNIPER
-                    putExtra(WorkflowEngine.EXTRA_TASK, task)
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(intent)
-                } else {
-                    context.startService(intent)
-                }
-                isSniperRunning = true
-                Toast.makeText(context, "SNIPER ARMED for $finalTriggerTime!", Toast.LENGTH_LONG).show()
             },
             modifier = Modifier.fillMaxWidth().height(65.dp),
             colors = ButtonDefaults.buttonColors(
