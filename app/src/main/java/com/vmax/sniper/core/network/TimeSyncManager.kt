@@ -1,99 +1,145 @@
 package com.vmax.sniper.core.network
 
+import android.os.SystemClock
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
-import java.util.concurrent.atomic.AtomicBoolean
+import java.text.SimpleDateFormat
+import java.util.*
 
 object TimeSyncManager {
 
     private const val TAG = "TimeSync"
-    private const val NTP_SERVER = "time.nplindia.org"
+    private const val NTP_SERVER = "time.google.com"
+    private const val RESYNC_INTERVAL = 60_000L // 1 minute
 
-    @Volatile private var offset: Long = 0L
-    private val synced = AtomicBoolean(false)
+    @Volatile private var offsetMs: Long = 0L
+    @Volatile private var isSynced: Boolean = false
+    @Volatile private var lastSyncTime: Long = 0L
+    @Volatile private var cachedAddress: InetAddress? = null
+    
+    private val syncScope = CoroutineScope(Dispatchers.IO)
 
-    fun syncWithNetwork() {
-        Thread {
-            var socket: DatagramSocket? = null
-            try {
-                val address = InetAddress.getByName(NTP_SERVER)
+    fun isSynced(): Boolean = isSynced
 
-                val buffer = ByteArray(48).apply { this[0] = 0x1B }
+    fun currentTimeMillis(): Long {
+        return System.currentTimeMillis() + offsetMs
+    }
 
-                socket = DatagramSocket().apply {
-                    soTimeout = 3000
-                }
+    fun shouldResync(): Boolean {
+        return System.currentTimeMillis() - lastSyncTime > RESYNC_INTERVAL
+    }
+
+    fun getPreciseTimeString(): String {
+        val date = Date(currentTimeMillis())
+        return SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(date)
+    }
+
+    // ✅ syncTime() - WorkflowEngine calls this
+    fun syncTime() {
+        syncScope.launch {
+            syncWithNetwork()
+        }
+    }
+
+    // ✅ getOffset() - WorkflowEngine needs this
+    fun getOffset(): Long = offsetMs
+
+    suspend fun syncWithNetwork(samples: Int = 3): Boolean = withContext(Dispatchers.IO) {
+
+        var socket: DatagramSocket? = null
+
+        try {
+            val address = cachedAddress ?: InetAddress.getByName(NTP_SERVER).also {
+                cachedAddress = it
+            }
+
+            socket = DatagramSocket().apply {
+                soTimeout = 1200
+            }
+
+            var bestOffset = 0L
+            var bestDelay = Long.MAX_VALUE
+
+            val buffer = ByteArray(48)
+
+            repeat(samples) { index ->
+
+                buffer.fill(0)
+                buffer[0] = 0x1B
 
                 val request = DatagramPacket(buffer, buffer.size, address, 123)
 
-                val t1 = System.currentTimeMillis()
+                val t1Wall = System.currentTimeMillis()
+                val t1Mono = SystemClock.elapsedRealtime()
+
                 socket.send(request)
 
                 val response = DatagramPacket(buffer, buffer.size)
                 socket.receive(response)
 
-                val t4 = System.currentTimeMillis()
+                val t4Mono = SystemClock.elapsedRealtime()
+                val t4Wall = t1Wall + (t4Mono - t1Mono)
 
-                val t2 = parseNtpTimestamp(buffer, 32) // receive time
-                val t3 = parseNtpTimestamp(buffer, 40) // transmit time
+                val seconds = readTimeStamp(buffer, 40)
+                val fraction = readTimeStamp(buffer, 44)
 
-                // ✅ Correct NTP formula
-                val delay = t4 - t1
-                val calculatedOffset = ((t2 - t1) + (t3 - t4)) / 2
+                val ntpEpochOffset = 2208988800000L
+                val t3 = (seconds * 1000) +
+                        ((fraction * 1000L) / 0x100000000L) -
+                        ntpEpochOffset
 
-                offset = calculatedOffset
-                synced.set(true)
+                val delay = t4Mono - t1Mono
+                val offset = (t3 - t4Wall) + (delay / 2)
 
-                Log.d(TAG, "✅ Synced | Offset: $offset ms | RTT: $delay ms")
+                if (delay < bestDelay) {
+                    bestDelay = delay
+                    bestOffset = offset
+                }
 
-            } catch (e: Exception) {
-                synced.set(false)
-                Log.e(TAG, "❌ Sync Failed: ${e.message}")
-            } finally {
-                socket?.close()
+                if (bestDelay < 20) {
+                    applyOffset(bestOffset)
+                    Log.d(TAG, "⚡ Ultra-fast sync @ sample $index | RTT: ${bestDelay}ms")
+                    return@withContext true
+                }
             }
-        }.start()
-    }
 
-    // ✅ ADDED: Alias for syncWithNetwork() - WorkflowEngine calls this
-    fun syncTime() = syncWithNetwork()
+            applyOffset(bestOffset)
+            Log.d(TAG, "✅ Sync OK | Offset: ${offsetMs}ms | RTT: ${bestDelay}ms")
 
-    // ✅ ADDED: Get current offset value
-    fun getOffset(): Long = offset
+            true
 
-    fun currentTimeMillis(): Long {
-        return System.currentTimeMillis() + offset
-    }
-
-    fun isSynced(): Boolean = synced.get()
-
-    private fun parseNtpTimestamp(buffer: ByteArray, offset: Int): Long {
-        var seconds = 0L
-        var fraction = 0L
-
-        for (i in 0..3) {
-            seconds = (seconds shl 8) or (buffer[offset + i].toLong() and 0xFF)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Sync Failed: ${e.message}")
+            false
+        } finally {
+            socket?.close()
         }
-        for (i in 0..3) {
-            fraction = (fraction shl 8) or (buffer[offset + 4 + i].toLong() and 0xFF)
+    }
+
+    private fun applyOffset(newOffset: Long) {
+        val alpha = if (kotlin.math.abs(newOffset - offsetMs) > 50) 0.5 else 0.3
+
+        offsetMs = if (isSynced) {
+            ((offsetMs * (1 - alpha)) + (newOffset * alpha)).toLong()
+        } else {
+            newOffset
         }
 
-        return (seconds - 2208988800L) * 1000 +
-                (fraction * 1000L) / 0x100000000L
+        isSynced = true
+        lastSyncTime = System.currentTimeMillis()
     }
 
-    fun getPreciseTimeString(): String {
-        val time = currentTimeMillis()
-        val calendar = java.util.Calendar.getInstance().apply { timeInMillis = time }
-
-        return String.format(
-            "%02d:%02d:%02d.%03d",
-            calendar.get(java.util.Calendar.HOUR_OF_DAY),
-            calendar.get(java.util.Calendar.MINUTE),
-            calendar.get(java.util.Calendar.SECOND),
-            calendar.get(java.util.Calendar.MILLISECOND)
-        )
+    private fun readTimeStamp(buffer: ByteArray, offset: Int): Long {
+        var value = 0L
+        for (i in 0..3) {
+            value = (value shl 8) or (buffer[offset + i].toLong() and 0xFFL)
+        }
+        return value
     }
 }
