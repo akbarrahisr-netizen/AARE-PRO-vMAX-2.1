@@ -1,6 +1,8 @@
 package com.vmax.sniper.core.engine
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_SCROLL_BACKWARD
+import android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_SCROLL_FORWARD
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
 import android.app.NotificationChannel
@@ -84,7 +86,18 @@ class WorkflowEngine : AccessibilityService() {
     // ✅ Timestamp formatter for precise logs
     private val timestampFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
     private fun getCurrentTimestamp(): String = timestampFormat.format(Date(TimeSyncManager.currentTimeMillis()))
-    private fun now(): String = timestampFormat.format(Date())
+
+    // ==================== PUBLIC API FOR CAPTCHA SOLVER ====================
+    fun getStableRoot(): AccessibilityNodeInfo? = rootInActiveWindow
+
+    // ✅ FIX: Changed from private to internal so CaptchaSolver can access
+    internal fun stableClick(node: AccessibilityNodeInfo): Boolean {
+        var target: AccessibilityNodeInfo? = node
+        while (target != null && !target.isClickable) {
+            target = target.parent
+        }
+        return target?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
+    }
 
     // ==================== STATE HELPERS ====================
     private suspend fun transitionTo(newState: EngineState) {
@@ -105,15 +118,6 @@ class WorkflowEngine : AccessibilityService() {
     private inline fun <T> withRoot(block: (AccessibilityNodeInfo) -> T?): T? {
         val root = rootInActiveWindow ?: return null
         return try { block(root) } finally { root.recycle() }
-    }
-
-    // ==================== CLICK HELPER ====================
-    private fun stableClick(node: AccessibilityNodeInfo): Boolean {
-        var target: AccessibilityNodeInfo? = node
-        while (target != null && !target.isClickable) {
-            target = target.parent
-        }
-        return target?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
     }
 
     // ==================== TEXT HELPERS ====================
@@ -450,7 +454,6 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // ✅ OPTIMIZED REFRESH (Minor Optimization - null check improved)
     private fun triggerPreciseRefresh() {
         withRoot { root ->
             val refreshBtn = root.findAccessibilityNodeInfosByViewId(IRCTC.SEARCH_BTN)
@@ -499,7 +502,6 @@ class WorkflowEngine : AccessibilityService() {
                     launchIrctcApp()
                     delay(2000)
 
-                    // ✅ Sync time with NTP
                     TimeSyncManager.syncTime()
                     Log.d(TAG, "[${getCurrentTimestamp()}] ⏰ Time synced! Offset: ${TimeSyncManager.getOffset()}ms")
 
@@ -556,10 +558,8 @@ class WorkflowEngine : AccessibilityService() {
             try {
                 val targetHour = if (activeTask?.triggerTime?.startsWith("10") == true) 10 else 11
 
-                // 1. Final Payment Check (Highest Priority)
                 if (handleFinalPay()) return@launch
 
-                // 2. Payment Page Selection
                 if (isState(EngineState.PAYMENT)) {
                     if (handlePaymentPage()) {
                         selectPaymentUltraFast()
@@ -567,7 +567,6 @@ class WorkflowEngine : AccessibilityService() {
                     return@launch
                 }
 
-                // 3. Attack Mode (Train + Class Selection)
                 if (isState(EngineState.ATTACK) && !isReviewClicked) {
                     val isAc = targetHour == 10
                     Log.d(TAG, "[${getCurrentTimestamp()}] 🎯 Starting ${if (isAc) "AC" else "Sleeper"} Attack")
@@ -587,13 +586,11 @@ class WorkflowEngine : AccessibilityService() {
                     return@launch
                 }
 
-                // 4. Captcha Handling
                 if (isReviewClicked && isState(EngineState.CAPTCHA)) {
                     handleCaptcha()
                     return@launch
                 }
 
-                // 5. Auto State Transition
                 if (isReviewClicked && !isState(EngineState.CAPTCHA) && !isState(EngineState.PAYMENT)) {
                     transitionTo(EngineState.CAPTCHA)
                 }
