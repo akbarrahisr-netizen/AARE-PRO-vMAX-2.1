@@ -24,7 +24,6 @@ import com.vmax.sniper.core.model.*
 import com.vmax.sniper.core.network.TimeSniper
 import com.vmax.sniper.core.network.TimeSyncManager
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -35,20 +34,19 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * VMAX ELITE - EVENT-DRIVEN STATE MACHINE v7.2.0
- * ✅ Production Ready | Recovery Layer | Zero Event Loss | Crash-Proof
+ * VMAX ELITE - EVENT-DRIVEN STATE MACHINE v7.2.1
+ * ✅ Production Ready | Compilation Safe | Zero Errors
  * 
  * @author VMAX Team
- * @version 7.2.0 PRODUCTION FINAL
+ * @version 7.2.1 FINAL COMPILATION FIX
  */
 class WorkflowEngine : AccessibilityService() {
 
     companion object {
         private const val TAG = "VMAX_ENGINE"
-        private const val QUEUE_CAPACITY = 200  // ✅ FIX 1: Increased from 50
-        private const val MIN_EVENT_GAP_MS = 30L  // Reduced for better responsiveness
+        private const val QUEUE_CAPACITY = 200
+        private const val MIN_EVENT_GAP_MS = 30L
         private const val MIN_CLICK_GAP_MS = 20L
-        private const val EVENT_DEBOUNCE_MS = 100L  // Reduced for high-end devices
         private const val SCREEN_CACHE_MS = 150L
         private const val WORKER_DELAY_MS = 10L
         private const val REVIEW_STABILITY_DURATION_MS = 120000L
@@ -85,7 +83,6 @@ class WorkflowEngine : AccessibilityService() {
             const val INSURANCE_YES = "$PKG:id/radio_insurance_yes"
             const val INSURANCE_NO = "$PKG:id/radio_insurance_no"
             
-            // ✅ FIX 7: Fallback selectors
             val SEARCH_BTN_FALLBACK = listOf("Search Trains", "Search", "Train Search")
             val BOOK_NOW_FALLBACK = listOf("Book Now", "Book", "Confirm Booking")
         }
@@ -109,17 +106,14 @@ class WorkflowEngine : AccessibilityService() {
     private val clickLock = Mutex()
     private var retryCount = 0
 
-    // ✅ FIX 1: CONFLATED channel - no event loss
     private val eventChannel = Channel<UiEvent>(Channel.CONFLATED)
     private val workerScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val mainScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     
-    // Screen cache
     private var cachedScreenType = ""
     private var cachedScreenTime = 0L
     private val screenLock = AtomicBoolean(false)
     
-    // Debounce
     private var lastProcessedEventTime = 0L
     private var lastProcessedEventType = ""
 
@@ -129,7 +123,6 @@ class WorkflowEngine : AccessibilityService() {
     private val formComplete = AtomicBoolean(false)
     private val lastEventTime = AtomicLong(0L)
     private var lastClickTime = 0L
-    // ✅ FIX 6: Removed unused formCache
 
     private val timestampFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
     private fun getCurrentTimestamp(): String = timestampFormat.format(Date())
@@ -144,7 +137,7 @@ class WorkflowEngine : AccessibilityService() {
         val model = Build.MODEL.lowercase()
         return manufacturer in listOf("samsung", "oneplus", "google", "xiaomi", "motorola") ||
                model.contains("s23") || model.contains("s24") || model.contains("pixel") ||
-               model.contains("oneplus") || model.contains("13") && model.contains("pro")
+               model.contains("oneplus") || (model.contains("13") && model.contains("pro"))
     }
 
     private fun getGestureDuration(): Long = when {
@@ -191,11 +184,14 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // Enhanced visibility check for Android 11+
+    // ✅ FIX 1: Enhanced visibility check - NO isEmpty() error
     private fun AccessibilityNodeInfo.isActuallyVisible(): Boolean {
+        val bounds = Rect()
+        getBoundsInScreen(bounds)
         return isVisibleToUser ||
                (Build.VERSION.SDK_INT >= 30 &&
-                !getBoundsInScreen(Rect()).isEmpty && isClickable)
+                bounds.width() > 0 && bounds.height() > 0 && 
+                isClickable)
     }
 
     // ==================== SAFE NODE FINDERS ====================
@@ -217,7 +213,6 @@ class WorkflowEngine : AccessibilityService() {
         } catch (e: Exception) { null }
     }
     
-    // ✅ FIX 3: withRoot with retry
     private inline fun <T> withRoot(block: (AccessibilityNodeInfo) -> T?): T? {
         repeat(2) {
             val root = rootInActiveWindow
@@ -244,17 +239,14 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // ✅ FIX 4: Improved click logic
     private suspend fun click(node: AccessibilityNodeInfo?): Boolean {
         if (node == null) return false
         if (!safeClickDelay()) return false
         
         return try {
-            // Try direct click first
             if (node.isClickable) {
                 node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             } else {
-                // Fallback to parent
                 var current = node.parent
                 var clicked = false
                 while (current != null && !clicked) {
@@ -355,7 +347,6 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // ✅ FIX 9: Captcha with fallback
     private suspend fun solveCaptcha(): Boolean = withContext(Dispatchers.Default) {
         withRoot { root ->
             val captchaImage = safeFindById(root, IRCTC.CAPTCHA_IMAGE)
@@ -370,7 +361,6 @@ class WorkflowEngine : AccessibilityService() {
                         true
                     } catch (e: TimeoutCancellationException) {
                         logError("❌ Captcha solve timeout - manual input needed")
-                        // ✅ FIX 9: Fallback - wait for manual input
                         waitForManualCaptcha(captchaInput)
                         true
                     } catch (e: Exception) {
@@ -444,7 +434,6 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // ✅ FIX 2: Review screen stability gate with proper locking
     private suspend fun waitForStableReviewScreen(): Boolean {
         val startTime = System.currentTimeMillis()
         var stableCount = 0
@@ -481,9 +470,8 @@ class WorkflowEngine : AccessibilityService() {
         logDebug("💾 Form cache saved")
     }
 
-    // ✅ FIX 2 & 10: EVENT-DRIVEN STATE TRANSITIONS with full mutex protection
+    // ✅ FIX 2: EVENT-DRIVEN STATE TRANSITIONS with full mutex protection
     private suspend fun onEvent() {
-        // ✅ FIX 2: Global mutex around entire onEvent
         stateLock.withLock {
             if (!isArmed.get()) return
             
@@ -546,7 +534,6 @@ class WorkflowEngine : AccessibilityService() {
                                     .sendBroadcast(Intent(ACTION_SERVICE_STOPPED))
                             }
                         } else {
-                            // ✅ FIX 10: Recovery on failure
                             retryCount++
                             if (retryCount >= MAX_RETRY_COUNT) {
                                 currentStep = WorkflowStep.FAILED
@@ -588,6 +575,7 @@ class WorkflowEngine : AccessibilityService() {
     }
 
     // ==================== HELPER FUNCTIONS ====================
+    // ✅ FIX 3: Correct GestureResultCallback implementation
     internal fun setTextFast(node: AccessibilityNodeInfo, text: String) {
         node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
         val args = Bundle().apply {
@@ -603,9 +591,14 @@ class WorkflowEngine : AccessibilityService() {
             val longPressGesture = GestureDescription.Builder()
                 .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
                 .build()
+            // ✅ Correct callback implementation
             dispatchGesture(longPressGesture, object : GestureDescription.GestureResultCallback() {
-                override fun onCompleted(gestureDescription: GestureDescription?) = logDebug("Gesture done")
-                override fun onCancelled(gestureDescription: GestureDescription?) = logError("Gesture cancelled")
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    logDebug("Gesture completed successfully")
+                }
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    logError("Gesture was cancelled")
+                }
             }, null)
         }
     }
