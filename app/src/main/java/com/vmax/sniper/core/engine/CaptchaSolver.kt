@@ -13,6 +13,7 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 
 /**
@@ -22,7 +23,7 @@ import kotlin.coroutines.resume
 object CaptchaSolver {
     private const val TAG = "VMAX_Captcha"
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-    private var isSolving = false
+    private val isSolving = AtomicBoolean(false)
     
     /**
      * Main suspend function for Tatkal optimization
@@ -33,12 +34,12 @@ object CaptchaSolver {
         captchaImageNode: AccessibilityNodeInfo,
         captchaInputNode: AccessibilityNodeInfo
     ): Boolean {
-        if (isSolving) {
+        if (isSolving.get()) {
             Log.d(TAG, "Already solving captcha, skipping...")
             return false
         }
         
-        isSolving = true
+        isSolving.set(true)
         Log.d(TAG, "🔍 Captcha detected, solving with ML Kit...")
         
         return try {
@@ -50,7 +51,7 @@ object CaptchaSolver {
             
             if (bounds.width() <= 0 || bounds.height() <= 0) {
                 Log.e(TAG, "Invalid captcha bounds")
-                isSolving = false
+                isSolving.set(false)
                 return false
             }
             
@@ -70,19 +71,19 @@ object CaptchaSolver {
                 clickVerifyButton(engine)
                 
                 Log.d(TAG, "✅ Captcha solved successfully: $solvedText")
-                isSolving = false
+                isSolving.set(false)
                 true
             } else {
                 Log.w(TAG, "⚠️ Could not solve captcha, waiting for manual input")
                 // Method 3: Manual fallback
                 waitForManualCaptcha(engine, captchaInputNode)
-                isSolving = false
+                isSolving.set(false)
                 false
             }
             
         } catch (e: Exception) {
             Log.e(TAG, "Captcha solving error: ${e.message}")
-            isSolving = false
+            isSolving.set(false)
             false
         }
     }
@@ -258,22 +259,21 @@ object CaptchaSolver {
      */
     private suspend fun clickVerifyButton(engine: WorkflowEngine) {
         delay(30) // ✅ Fastest delay (वर्जन 3 से)
+        val verifyLabels = listOf("Verify", "Submit", "Check", 
+                                  "जांचें", "सबमिट", "OK", "Continue", "Proceed")
         repeat(3) {
-            val root = engine.getStableRoot() ?: return
+            val root = engine.rootInActiveWindow ?: return
             try {
-                val verifyBtn = engine.findNodeFast(
-                    root,
-                    listOf("Verify", "Submit", "Check", "जांचें", "सबमिट", "OK", "Continue", "Proceed"),
-                    ""
-                )
-                if (verifyBtn?.isClickable == true) {
-                    // ✅ Using stableClick (वर्जन 1 और 3 से)
-                    engine.stableClick(verifyBtn)
-                    Log.d(TAG, "✅ Verify button clicked")
-                    verifyBtn.recycle()
-                    return
+                for (label in verifyLabels) {
+                    val btn = root.findAccessibilityNodeInfosByText(label)
+                        .firstOrNull { it.isVisibleToUser && it.isClickable }
+                    if (btn != null) {
+                        engine.stableClick(btn)
+                        Log.d(TAG, "✅ Verify button clicked: $label")
+                        btn.recycle()
+                        return
+                    }
                 }
-                verifyBtn?.recycle()
             } finally {
                 root.recycle()
             }
