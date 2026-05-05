@@ -57,6 +57,12 @@ object TimeSyncManager {
         }.start()
     }
 
+    // ✅ ADDED: Alias for syncWithNetwork() - WorkflowEngine calls this
+    fun syncTime() = syncWithNetwork()
+
+    // ✅ ADDED: Get current offset value
+    fun getOffset(): Long = offset
+
     fun currentTimeMillis(): Long {
         return System.currentTimeMillis() + offset
     }
