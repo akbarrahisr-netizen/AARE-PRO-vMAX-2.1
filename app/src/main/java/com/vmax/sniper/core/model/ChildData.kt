@@ -2,12 +2,15 @@ package com.vmax.sniper.core.model
 
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
-import java.util.UUID
+import kotlinx.serialization.Serializable
 
-@Parcelize  // ✅ यह होना चाहिए
+@Serializable
+@Parcelize
 data class ChildData(
-    val id: String = UUID.randomUUID().toString(),
-    var name: String = "",
-    var ageRange: String = "",
-    var gender: String = ""
-) : Parcelable  // ✅ Parcelable implement होना चाहिए
+    val name: String = "",
+    val ageRange: String = "",         // ✅ String to match UI text field
+    val gender: String = "Male"
+) : Parcelable {
+
+    fun isValid(): Boolean = name.isNotBlank() && ageRange.toIntOrNull() in 0..12
+}
