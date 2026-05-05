@@ -1,138 +1,48 @@
 package com.vmax.sniper.core.network
 
-import android.os.SystemClock
 import android.util.Log
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.net.DatagramPacket
-import java.net.DatagramSocket
-import java.net.InetAddress
-import java.text.SimpleDateFormat
-import java.util.*
+import kotlinx.coroutines.delay
+import java.util.Calendar
 
-object TimeSyncManager {
+object TimeSniper {
 
-    private const val TAG = "TimeSync"
-    private const val NTP_SERVER = "time.google.com"
-    private const val RESYNC_INTERVAL = 60_000L // 1 minute
+    private const val TAG = "TimeSniper"
 
-    @Volatile private var offsetMs: Long = 0L
-    @Volatile private var isSynced: Boolean = false
-    @Volatile private var lastSyncTime: Long = 0L
-    @Volatile private var cachedAddress: InetAddress? = null
+    suspend fun scheduleFire(
+        targetHour: Int,
+        advanceMs: Long,
+        onFire: () -> Unit
+    ) {
+        Log.d(TAG, "🎯 Scheduler started - Target: ${targetHour}:00:00, Advance: ${advanceMs}ms")
+        
+        while (true) {
+            val now = TimeSyncManager.currentTimeMillis()
+            val cal = Calendar.getInstance().apply { timeInMillis = now }
 
-    fun isSynced(): Boolean = isSynced
+            val hour = cal.get(Calendar.HOUR_OF_DAY)
+            val minute = cal.get(Calendar.MINUTE)
+            val second = cal.get(Calendar.SECOND)
+            val ms = cal.get(Calendar.MILLISECOND)
 
-    fun currentTimeMillis(): Long {
-        return System.currentTimeMillis() + offsetMs
-    }
+            val totalMs = ((hour * 3600L) + (minute * 60L) + second) * 1000L + ms
+            val targetMs = targetHour * 3600L * 1000L
 
-    fun shouldResync(): Boolean {
-        return System.currentTimeMillis() - lastSyncTime > RESYNC_INTERVAL
-    }
+            val remaining = targetMs - advanceMs - totalMs
 
-    fun getPreciseTimeString(): String {
-        val date = Date(currentTimeMillis())
-        return SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(date)
-    }
-
-    suspend fun syncWithNetwork(samples: Int = 3): Boolean = withContext(Dispatchers.IO) {
-
-        var socket: DatagramSocket? = null
-
-        try {
-            val address = cachedAddress ?: InetAddress.getByName(NTP_SERVER).also {
-                cachedAddress = it
-            }
-
-            socket = DatagramSocket().apply {
-                soTimeout = 1200
-            }
-
-            var bestOffset = 0L
-            var bestDelay = Long.MAX_VALUE
-
-            val buffer = ByteArray(48)
-
-            repeat(samples) { index ->
-
-                buffer.fill(0)
-                buffer[0] = 0x1B
-
-                val request = DatagramPacket(buffer, buffer.size, address, 123)
-
-                // 🧠 Hybrid timing (Monotonic + Wall)
-                val t1Wall = System.currentTimeMillis()
-                val t1Mono = SystemClock.elapsedRealtime()
-
-                socket.send(request)
-
-                val response = DatagramPacket(buffer, buffer.size)
-                socket.receive(response)
-
-                val t4Mono = SystemClock.elapsedRealtime()
-                val t4Wall = t1Wall + (t4Mono - t1Mono)
-
-                // NTP response parsing
-                val seconds = readTimeStamp(buffer, 40)
-                val fraction = readTimeStamp(buffer, 44)
-
-                val ntpEpochOffset = 2208988800000L
-                val t3 = (seconds * 1000) +
-                        ((fraction * 1000L) / 0x100000000L) -
-                        ntpEpochOffset
-
-                val delay = t4Mono - t1Mono
-                val offset = (t3 - t4Wall) + (delay / 2)
-
-                if (delay < bestDelay) {
-                    bestDelay = delay
-                    bestOffset = offset
+            when {
+                remaining > 500 -> {
+                    Log.d(TAG, "⏰ Waiting ${remaining}ms until fire")
+                    delay(remaining - 500)
                 }
-
-                // ⚡ TRUE EARLY EXIT
-                if (bestDelay < 20) {
-                    applyOffset(bestOffset)
-                    Log.d(TAG, "⚡ Ultra-fast sync @ sample $index | RTT: ${bestDelay}ms")
-                    return@withContext true
+                remaining > 0 -> {
+                    delay(1)
+                }
+                else -> {
+                    Log.d(TAG, "🔥🔥🔥 FIRE! Time: ${TimeSyncManager.getPreciseTimeString()} 🔥🔥🔥")
+                    onFire()
+                    return
                 }
             }
-
-            applyOffset(bestOffset)
-            Log.d(TAG, "✅ Sync OK | Offset: ${offsetMs}ms | RTT: ${bestDelay}ms")
-
-            true
-
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Sync Failed: ${e.message}")
-            false
-        } finally {
-            socket?.close()
         }
-    }
-
-    /**
-     * 🎯 Adaptive Smoothing (Smart jitter handling)
-     */
-    private fun applyOffset(newOffset: Long) {
-
-        val alpha = if (kotlin.math.abs(newOffset - offsetMs) > 50) 0.5 else 0.3
-
-        offsetMs = if (isSynced) {
-            ((offsetMs * (1 - alpha)) + (newOffset * alpha)).toLong()
-        } else {
-            newOffset
-        }
-
-        isSynced = true
-        lastSyncTime = System.currentTimeMillis()
-    }
-
-    private fun readTimeStamp(buffer: ByteArray, offset: Int): Long {
-        var value = 0L
-        for (i in 0..3) {
-            value = (value shl 8) or (buffer[offset + i].toLong() and 0xFFL)
-        }
-        return value
     }
 }
