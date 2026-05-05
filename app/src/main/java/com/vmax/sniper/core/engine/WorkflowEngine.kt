@@ -477,6 +477,7 @@ class WorkflowEngine : AccessibilityService() {
         return START_STICKY
     }
 
+    // ==================== ✅ FIXED onAccessibilityEvent - No .onFailure error ====================
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!isArmed.get() || event == null) return
         
@@ -489,14 +490,16 @@ class WorkflowEngine : AccessibilityService() {
         
         if (event.packageName?.toString() != IRCTC.PKG) return
         
-        eventChannel.trySend(UiEvent(
+        val result = eventChannel.trySend(UiEvent(
             type = when (event.eventType) {
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> "STATE_CHANGED"
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> "CONTENT_CHANGED"
                 else -> "UNKNOWN"
             },
             timestamp = now
-        )).onFailure {
+        ))
+        
+        if (result.isFailure) {
             logError("Event dropped (queue full)")
         }
     }
