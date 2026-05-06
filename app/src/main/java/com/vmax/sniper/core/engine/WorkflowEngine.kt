@@ -468,7 +468,7 @@ class WorkflowEngine : AccessibilityService() {
         logDebug("💾 Form cache saved")
     }
 
-    // ✅ SMART RESUME + FORCE ATTACK SUPPORT in onEvent - FIXED with FORM_FILLED case
+    // ✅ FINAL FIXED onEvent() with FORM_FILLED case
     private suspend fun onEvent() {
         stateLock.withLock {
             if (!isArmed.get()) return
