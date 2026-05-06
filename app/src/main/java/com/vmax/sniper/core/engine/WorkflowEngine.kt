@@ -468,7 +468,7 @@ class WorkflowEngine : AccessibilityService() {
         logDebug("💾 Form cache saved")
     }
 
-    // ✅ SMART RESUME + FORCE ATTACK SUPPORT in onEvent
+    // ✅ SMART RESUME + FORCE ATTACK SUPPORT in onEvent - FIXED with FORM_FILLED case
     private suspend fun onEvent() {
         stateLock.withLock {
             if (!isArmed.get()) return
@@ -525,6 +525,11 @@ class WorkflowEngine : AccessibilityService() {
                             currentStep = WorkflowStep.REVIEW_READY
                             logDebug("➡️ $currentStep")
                         }
+                    }
+                    // ✅ FIXED: Added missing FORM_FILLED case
+                    WorkflowStep.FORM_FILLED -> {
+                        currentStep = WorkflowStep.REVIEW_READY
+                        logDebug("➡️ FORM_FILLED → REVIEW_READY")
                     }
                     WorkflowStep.REVIEW_READY -> {
                         if (waitForStableReviewScreen()) {
@@ -595,7 +600,6 @@ class WorkflowEngine : AccessibilityService() {
     }
 
     // ==================== HELPER FUNCTIONS ====================
-    // ✅ FIXED: Removed GestureResultCallback completely to avoid compilation error
     internal fun setTextFast(node: AccessibilityNodeInfo, text: String) {
         node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
         val args = Bundle().apply {
@@ -611,7 +615,6 @@ class WorkflowEngine : AccessibilityService() {
             val longPressGesture = GestureDescription.Builder()
                 .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
                 .build()
-            // ✅ FIX: Using null callback to avoid GestureResultCallback issues
             dispatchGesture(longPressGesture, null, null)
         }
     }
