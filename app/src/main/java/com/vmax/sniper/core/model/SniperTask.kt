@@ -51,8 +51,11 @@ enum class BookingOption {
     NONE, SAME_COACH, ONE_LOWER_BERTH, TWO_LOWER_BERTHS 
 }
 
-enum class PaymentCategory { 
-    BHIM_UPI, UPI_ID, CARDS 
+// ✅ FIX: PaymentCategory with display property
+enum class PaymentCategory(val display: String) {
+    BHIM_UPI("BHIM UPI"),
+    UPI_ID("UPI ID"),
+    CARDS("Cards & Net Banking")
 }
 
 // ==================== PAYMENT DETAILS ====================
