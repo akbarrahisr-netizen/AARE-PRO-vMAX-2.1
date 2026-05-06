@@ -14,6 +14,8 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
@@ -24,9 +26,8 @@ import com.vmax.sniper.core.model.*
 import com.vmax.sniper.core.network.TimeSniper
 import com.vmax.sniper.core.network.TimeSyncManager
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.atomic.AtomicBoolean
@@ -34,23 +35,23 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * VMAX ELITE - EVENT-DRIVEN STATE MACHINE v7.3.3
- * ✅ Compilation Fixed | Smart Resume | Force Attack
+ * VMAX ELITE - EVENT-DRIVEN STATE MACHINE v10.0.0
+ * ✅ ULTRA PERFORMANCE | Industrial Grade | Production Ready
  */
 class WorkflowEngine : AccessibilityService() {
 
     companion object {
         private const val TAG = "VMAX_ENGINE"
-        private const val QUEUE_CAPACITY = 200
         private const val MIN_EVENT_GAP_MS = 30L
         private const val MIN_CLICK_GAP_MS = 20L
         private const val SCREEN_CACHE_MS = 150L
-        private const val WORKER_DELAY_MS = 10L
         private const val REVIEW_STABILITY_DURATION_MS = 120000L
         private const val CAPTCHA_TIMEOUT_MS = 8000L
         private const val REVIEW_STABLE_COUNT_REQUIRED = 3
         private const val MAX_RETRY_COUNT = 3
-        private const val RETRY_DELAY_MS = 100L
+        private const val TIME_SYNC_TIMEOUT_MS = 3000L
+        private const val WATCHDOG_INTERVAL_MS = 2000L
+        private const val WATCHDOG_TIMEOUT_MS = 5000L
         
         const val ACTION_START_SNIPER = "com.vmax.sniper.START_SNIPER"
         const val EXTRA_TASK = "extra_task"
@@ -88,23 +89,27 @@ class WorkflowEngine : AccessibilityService() {
 
     // ==================== STATE MACHINE ====================
     private enum class WorkflowStep {
-        IDLE, REFRESH_DONE, ATTACK_DONE, FORM_FILLED, REVIEW_READY, 
+        IDLE, REFRESH_DONE, ATTACK_DONE, FORM_FILLING, FORM_FILLED, REVIEW_READY, 
         CAPTCHA_SOLVED, PAYMENT_DONE, BOOKING_DONE, FAILED
     }
     
     private enum class ProcessingState {
-        IDLE, RUNNING, PROCESSING
+        IDLE, PROCESSING
     }
     
     private data class UiEvent(val type: String, val timestamp: Long)
     
-    private var currentStep = WorkflowStep.IDLE
+    // Atomic state for thread safety
+    private val currentStep = AtomicReference(WorkflowStep.IDLE)
     private val processingState = AtomicReference(ProcessingState.IDLE)
-    private val stateLock = Mutex()
-    private val clickLock = Mutex()
+    
     private var retryCount = 0
 
-    private val eventChannel = Channel<UiEvent>(Channel.CONFLATED)
+    // Channel with overflow handling
+    private val eventChannel = Channel<UiEvent>(
+        capacity = 200,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
     private val workerScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val mainScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     
@@ -120,14 +125,20 @@ class WorkflowEngine : AccessibilityService() {
     private val isArmed = AtomicBoolean(false)
     private val formComplete = AtomicBoolean(false)
     private val lastEventTime = AtomicLong(0L)
-    private var lastClickTime = 0L
+    private val lastClickTime = AtomicLong(0L)
+    private var lastProgressTime = System.currentTimeMillis()
 
     private val timestampFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
     private fun getCurrentTimestamp(): String = timestampFormat.format(Date())
 
+    // Production logging - always enabled for debugging
     private fun logDebug(message: String) = Log.d(TAG, "[${getCurrentTimestamp()}] $message")
     private fun logError(message: String) = Log.e(TAG, "[${getCurrentTimestamp()}] $message")
     private fun logError(message: String, e: Exception) = Log.e(TAG, "[${getCurrentTimestamp()}] $message", e)
+
+    private fun updateProgress() {
+        lastProgressTime = System.currentTimeMillis()
+    }
 
     // ==================== DEVICE DETECTION ====================
     private fun isHighEndDevice(): Boolean {
@@ -210,62 +221,119 @@ class WorkflowEngine : AccessibilityService() {
         } catch (e: Exception) { null }
     }
     
-    private inline fun <T> withRoot(block: (AccessibilityNodeInfo) -> T?): T? {
-        repeat(2) {
-            val root = rootInActiveWindow
-            if (root != null) {
-                return try {
-                    block(root)
-                } catch (e: Exception) {
-                    logError("withRoot error: ${e.message}")
-                    null
-                }
-            }
-            Thread.sleep(10)
+    // ✅ ULTRA PATCH: Fresh Root - No stale node issues
+    private suspend inline fun <T> withFreshRoot(block: (AccessibilityNodeInfo) -> T?): T? {
+        delay(10)
+        val root = rootInActiveWindow ?: return null
+        return try { 
+            block(root) 
+        } catch (e: Exception) { 
+            logError("withFreshRoot error: ${e.message}")
+            null 
         }
-        return null
+    }
+    
+    // Legacy withRoot - kept for compatibility
+    private suspend fun <T> withRoot(block: suspend (AccessibilityNodeInfo) -> T?): T? {
+        return withFreshRoot(block)
     }
 
     // ==================== THREAD-SAFE CLICK ====================
-    private suspend fun safeClickDelay(): Boolean {
-        return clickLock.withLock {
-            val now = System.currentTimeMillis()
-            if (now - lastClickTime < MIN_CLICK_GAP_MS) return@withLock false
-            lastClickTime = now
-            true
-        }
+    private fun safeClickDelay(): Boolean {
+        val now = System.currentTimeMillis()
+        val last = lastClickTime.get()
+        if (now - last < MIN_CLICK_GAP_MS) return false
+        return lastClickTime.compareAndSet(last, now)
     }
 
-    private suspend fun click(node: AccessibilityNodeInfo?): Boolean {
+    // ✅ ULTRA PATCH: Ultra Click - Multi-strategy
+    private fun ultraClick(node: AccessibilityNodeInfo?): Boolean {
         if (node == null) return false
         if (!safeClickDelay()) return false
-        
+
         return try {
+            // Strategy 1: Direct click
             if (node.isClickable) {
-                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            } else {
-                var current = node.parent
-                var clicked = false
-                while (current != null && !clicked) {
-                    if (current.isClickable) {
-                        clicked = current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                    }
-                    current = current.parent
+                return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            }
+            
+            // Strategy 2: Parent traversal
+            var parent = node.parent
+            while (parent != null) {
+                if (parent.isClickable) {
+                    return parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                 }
-                clicked
+                parent = parent.parent
+            }
+            
+            // Strategy 3: Gesture fallback
+            val rect = Rect()
+            node.getBoundsInScreen(rect)
+            if (rect.width() > 0 && rect.height() > 0) {
+                val path = Path().apply {
+                    moveTo(rect.centerX().toFloat(), rect.centerY().toFloat())
+                }
+                val gesture = GestureDescription.Builder()
+                    .addStroke(GestureDescription.StrokeDescription(path, 0, 50))
+                    .build()
+                dispatchGesture(gesture, null, null)
+                true
+            } else {
+                false
             }
         } catch (e: Exception) {
-            logError("Click failed", e)
+            logError("UltraClick failed: ${e.message}")
             false
         }
     }
+    
+    // Legacy click - kept for compatibility
+    private fun click(node: AccessibilityNodeInfo?): Boolean = ultraClick(node)
 
-    internal suspend fun stableClick(node: AccessibilityNodeInfo?): Boolean = click(node)
+    // ✅ ULTRA PATCH: Ultra Text Input
+    private suspend fun ultraSetText(node: AccessibilityNodeInfo, text: String) {
+        // Strategy 1: Direct set text
+        repeat(2) {
+            val args = Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+            }
+            if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return
+            delay(5)
+        }
+        
+        // Strategy 2: Clipboard paste
+        try {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("vmax_sniper", text))
+            node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+        } catch (e: Exception) {
+            logError("UltraSetText failed: ${e.message}")
+        }
+    }
+    
+    // Legacy setTextFast - kept for compatibility
+    private suspend fun setTextFast(node: AccessibilityNodeInfo, text: String) = ultraSetText(node, text)
 
-    // ==================== WORKFLOW ACTIONS WITH RETRY ====================
+    // ==================== WORKFLOW ACTIONS ====================
+    
+    // ✅ ULTRA PATCH: Exponential Backoff Retry
+    private suspend fun withUltraRetry(block: suspend () -> Boolean): Boolean {
+        repeat(3) { attempt ->
+            try {
+                if (block()) return true
+            } catch (e: Exception) {
+                logError("Retry ${attempt + 1} failed: ${e.message}")
+            }
+            delay(80L * (attempt + 1)) // 80, 160, 240ms
+        }
+        return false
+    }
+    
+    private suspend fun withSafeRetry(block: suspend () -> Boolean): Boolean = withUltraRetry(block)
+
     private suspend fun executeRefresh(): Boolean {
-        return withRetry {
-            withRoot { root ->
+        return withUltraRetry {
+            withFreshRoot { root ->
                 val node = safeFindById(root, IRCTC.SEARCH_BTN) ?: 
                            safeFindByText(root, IRCTC.SEARCH_BTN_FALLBACK)
                 if (node != null && node.isClickable) {
@@ -277,75 +345,73 @@ class WorkflowEngine : AccessibilityService() {
     }
 
     private suspend fun executeAttack(): Boolean {
-        return withRetry {
-            withRoot { root ->
+        return withUltraRetry {
+            withFreshRoot { root ->
                 val node = safeFindById(root, IRCTC.BOOK_NOW_BTN) ?:
                            safeFindByText(root, IRCTC.BOOK_NOW_FALLBACK)
-                node?.let { click(it); return@withRoot true }
+                node?.let { ultraClick(it); return@withFreshRoot true }
                 false
             } ?: false
         }
     }
 
-    private suspend fun <T> withRetry(block: suspend () -> T): T {
-        var lastError: Exception? = null
-        repeat(MAX_RETRY_COUNT) { attempt ->
-            try {
-                return block()
-            } catch (e: Exception) {
-                lastError = e
-                logError("Retry attempt ${attempt + 1} failed", e)
-                delay(RETRY_DELAY_MS)
-            }
-        }
-        throw lastError ?: Exception("Operation failed after $MAX_RETRY_COUNT retries")
+    private suspend fun isFormAlreadyFilled(): Boolean {
+        return withFreshRoot { root ->
+            val proceedBtn = safeFindById(root, IRCTC.PROCEED_BTN)
+            proceedBtn != null && proceedBtn.isClickable
+        } ?: formComplete.get()
     }
 
     private suspend fun fillPassengerForm() {
+        updateProgress()
+        currentStep.set(WorkflowStep.FORM_FILLING)
         val task = activeTask.get() ?: return
         val passengers = task.passengers.take(4)
         
         for ((index, passenger) in passengers.withIndex()) {
             if (index > 0) {
-                withRoot { root -> safeFindById(root, IRCTC.ADD_PASSENGER_BTN)?.let { click(it) } }
+                withFreshRoot { root -> safeFindById(root, IRCTC.ADD_PASSENGER_BTN)?.let { ultraClick(it) } }
                 delay(Timing.FAST_MS)
             }
             
-            withRoot { root -> safeFindById(root, IRCTC.NAME_INPUT)?.let { setTextFast(it, passenger.name) } }
+            withFreshRoot { root -> safeFindById(root, IRCTC.NAME_INPUT)?.let { ultraSetText(it, passenger.name) } }
             delay(Timing.FAST_MS)
             
-            withRoot { root -> safeFindById(root, IRCTC.AGE_INPUT)?.let { setTextFast(it, passenger.age.toString()) } }
+            withFreshRoot { root -> safeFindById(root, IRCTC.AGE_INPUT)?.let { ultraSetText(it, passenger.age.toString()) } }
             delay(Timing.FAST_MS)
             
             if (passenger.gender.isNotBlank()) {
-                withRoot { root -> safeFindById(root, IRCTC.GENDER_SPINNER)?.let { click(it) } }
+                withFreshRoot { root -> safeFindById(root, IRCTC.GENDER_SPINNER)?.let { ultraClick(it) } }
                 delay(Timing.FAST_MS)
-                withRoot { root -> 
+                withFreshRoot { root -> 
                     val genderNode = root.findAccessibilityNodeInfosByText(passenger.gender)
                         .firstOrNull { it.isActuallyVisible() }
-                    genderNode?.let { click(it) }
+                    genderNode?.let { ultraClick(it) }
                 }
                 delay(Timing.FAST_MS)
             }
+            updateProgress()
         }
         
-        withRoot { root ->
+        withFreshRoot { root ->
             val insuranceBtn = if (task.insurance) IRCTC.INSURANCE_YES else IRCTC.INSURANCE_NO
-            safeFindById(root, insuranceBtn)?.let { click(it) }
+            safeFindById(root, insuranceBtn)?.let { ultraClick(it) }
         }
         delay(Timing.FAST_MS)
         
-        withRoot { root ->
+        withFreshRoot { root ->
             safeFindById(root, IRCTC.PROCEED_BTN)?.let {
-                click(it)
+                ultraClick(it)
                 formComplete.set(true)
+                currentStep.set(WorkflowStep.FORM_FILLED)
                 logDebug("📋 Form complete")
+                updateProgress()
             }
         }
     }
 
     private suspend fun solveCaptcha(): Boolean = withContext(Dispatchers.Default) {
-        withRoot { root ->
+        withFreshRoot { root ->
             val captchaImage = safeFindById(root, IRCTC.CAPTCHA_IMAGE)
             val captchaInput = safeFindById(root, IRCTC.CAPTCHA_INPUT)
             if (captchaImage != null && captchaInput != null && activeTask.get()?.captchaAutofill == true) {
@@ -358,10 +424,12 @@ class WorkflowEngine : AccessibilityService() {
                         true
                     } catch (e: TimeoutCancellationException) {
                         logError("❌ Captcha solve timeout - manual input needed")
+                        notifyUserCaptchaRequired()
                         waitForManualCaptcha(captchaInput)
                         true
                     } catch (e: Exception) {
                         logError("❌ Captcha solve error", e)
+                        notifyUserCaptchaRequired()
                         waitForManualCaptcha(captchaInput)
                         true
                     }
@@ -370,60 +438,77 @@ class WorkflowEngine : AccessibilityService() {
         } ?: false
     }
     
+    private fun notifyUserCaptchaRequired() {
+        updateNotification("⚠️ Captcha required - Please enter manually")
+        
+        try {
+            val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            if (Build.VERSION.SDK_INT >= 26) {
+                vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(500)
+            }
+        } catch (e: Exception) {
+            logError("Vibrate failed", e)
+        }
+    }
+    
     private suspend fun waitForManualCaptcha(inputNode: AccessibilityNodeInfo) {
         logDebug("⏳ Waiting for manual captcha input...")
         repeat(50) {
             delay(100)
             if (inputNode.text.isNotBlank()) {
                 logDebug("✅ Manual captcha detected")
+                updateProgress()
                 return
             }
         }
         logDebug("⚠️ No manual captcha entered")
     }
     
-    private fun isCaptchaFilled(): Boolean {
-        return withRoot { root ->
+    private suspend fun isCaptchaFilled(): Boolean {
+        return withFreshRoot { root ->
             safeFindById(root, IRCTC.CAPTCHA_INPUT)?.text?.isNotBlank() == true
         } ?: false
     }
 
     private suspend fun selectPayment(): Boolean {
-        return withRetry {
-            withRoot { root ->
+        return withUltraRetry {
+            withFreshRoot { root ->
                 val upiNode = safeFindById(root, IRCTC.PAYMENT_UPI_APPS)
                 if (upiNode != null) {
-                    click(upiNode)
+                    ultraClick(upiNode)
                     delay(Timing.NORMAL_MS)
                     val upiApps = listOf("Google Pay", "PhonePe", "Paytm", "BHIM")
                     for (app in upiApps) {
                         val appNode = root.findAccessibilityNodeInfosByText(app)
                             .firstOrNull { it.isActuallyVisible() }
                         if (appNode != null) {
-                            click(appNode)
-                            return@withRoot true
+                            ultraClick(appNode)
+                            return@withFreshRoot true
                         }
                     }
-                    return@withRoot true
+                    return@withFreshRoot true
                 }
                 
-                safeFindById(root, IRCTC.PAYMENT_BHIM_UPI)?.let { click(it); return@withRoot true }
-                safeFindById(root, IRCTC.PAYMENT_CARDS)?.let { click(it); return@withRoot true }
+                safeFindById(root, IRCTC.PAYMENT_BHIM_UPI)?.let { ultraClick(it); return@withFreshRoot true }
+                safeFindById(root, IRCTC.PAYMENT_CARDS)?.let { ultraClick(it); return@withFreshRoot true }
                 false
             } ?: false
         }
     }
 
     private suspend fun executeFinalPay(): Boolean {
-        return withRetry {
-            withRoot { root ->
+        return withUltraRetry {
+            withFreshRoot { root ->
                 safeFindById(root, IRCTC.PROCEED_BTN)?.let { payBtn ->
                     val text = payBtn.text?.toString()?.lowercase() ?: ""
                     val isValid = listOf("pay", "proceed", "confirm", "continue", "book", "भुगतान", "बुक")
                         .any { text.contains(it, true) }
                     if (isValid) {
-                        click(payBtn)
-                        return@withRoot true
+                        ultraClick(payBtn)
+                        return@withFreshRoot true
                     }
                 }
                 false
@@ -439,7 +524,7 @@ class WorkflowEngine : AccessibilityService() {
         while (stableCount < REVIEW_STABLE_COUNT_REQUIRED && 
                System.currentTimeMillis() - startTime < REVIEW_STABILITY_DURATION_MS) {
             delay(200L)
-            val isReview = withRoot { root ->
+            val isReview = withFreshRoot { root ->
                 safeFindById(root, IRCTC.CAPTCHA_IMAGE) != null
             } ?: false
             
@@ -451,6 +536,7 @@ class WorkflowEngine : AccessibilityService() {
                 stableCount = 0
                 lastChangeTime = System.currentTimeMillis()
             }
+            updateProgress()
         }
         return stableCount >= REVIEW_STABLE_COUNT_REQUIRED
     }
@@ -468,166 +554,73 @@ class WorkflowEngine : AccessibilityService() {
         logDebug("💾 Form cache saved")
     }
 
-    // ✅ FINAL FIXED onEvent() with FORM_FILLED case
-    private suspend fun onEvent() {
-        stateLock.withLock {
-            if (!isArmed.get()) return
-            
-            val currentScreen = getCurrentScreen()
-            
-            // SMART RESUME: Manually login kiye ho to wahan se start karo
-            if (currentStep == WorkflowStep.IDLE || currentStep == WorkflowStep.REFRESH_DONE) {
-                when (currentScreen) {
-                    "PASSENGER_FORM" -> {
-                        logDebug("🔄 Smart resume detected: Already on Passenger Form")
-                        currentStep = WorkflowStep.ATTACK_DONE
-                        fillPassengerForm()
-                        return
-                    }
-                    "REVIEW" -> {
-                        logDebug("🔄 Smart resume detected: Already on Review Screen")
-                        currentStep = WorkflowStep.REVIEW_READY
-                    }
-                    "PAYMENT" -> {
-                        logDebug("🔄 Smart resume detected: Already on Payment Screen")
-                        currentStep = WorkflowStep.PAYMENT_DONE
-                    }
-                    else -> { /* do nothing */ }
-                }
-            }
-            
-            if (currentScreen == "REVIEW" && !screenLock.compareAndSet(false, true)) {
-                return
-            }
-            
-            if (processingState.get() == ProcessingState.PROCESSING) return
-            processingState.set(ProcessingState.PROCESSING)
-            
-            try {
-                when (currentStep) {
-                    WorkflowStep.IDLE -> {
-                        if (executeRefresh()) {
-                            currentStep = WorkflowStep.REFRESH_DONE
-                            logDebug("➡️ $currentStep")
-                            retryCount = 0
-                        }
-                    }
-                    WorkflowStep.REFRESH_DONE -> {
-                        if (executeAttack()) {
-                            currentStep = WorkflowStep.ATTACK_DONE
-                            logDebug("➡️ $currentStep")
-                            delay(Timing.UI_LOAD_MS)
-                            fillPassengerForm()
-                        }
-                    }
-                    WorkflowStep.ATTACK_DONE -> {
-                        if (formComplete.get()) {
-                            currentStep = WorkflowStep.REVIEW_READY
-                            logDebug("➡️ $currentStep")
-                        }
-                    }
-                    // ✅ FIXED: Added missing FORM_FILLED case
-                    WorkflowStep.FORM_FILLED -> {
-                        currentStep = WorkflowStep.REVIEW_READY
-                        logDebug("➡️ FORM_FILLED → REVIEW_READY")
-                    }
-                    WorkflowStep.REVIEW_READY -> {
-                        if (waitForStableReviewScreen()) {
-                            if (solveCaptcha()) {
-                                currentStep = WorkflowStep.CAPTCHA_SOLVED
-                                logDebug("➡️ $currentStep")
-                            }
-                        }
-                    }
-                    WorkflowStep.CAPTCHA_SOLVED -> {
-                        if (isCaptchaFilled()) {
-                            delay(Timing.NORMAL_MS)
-                            if (selectPayment()) {
-                                currentStep = WorkflowStep.PAYMENT_DONE
-                                logDebug("➡️ $currentStep")
-                            }
-                        }
-                    }
-                    WorkflowStep.PAYMENT_DONE -> {
-                        if (executeFinalPay()) {
-                            currentStep = WorkflowStep.BOOKING_DONE
-                            logDebug("🎉 BOOKING SUCCESSFUL! 🎉")
-                            updateNotification("✅ BOOKING SUCCESSFUL! 🎉")
-                            isArmed.set(false)
-                            mainScope.launch {
-                                LocalBroadcastManager.getInstance(this@WorkflowEngine)
-                                    .sendBroadcast(Intent(ACTION_SERVICE_STOPPED))
-                            }
-                        } else {
-                            retryCount++
-                            if (retryCount >= MAX_RETRY_COUNT) {
-                                currentStep = WorkflowStep.FAILED
-                                logError("❌ BOOKING FAILED after $MAX_RETRY_COUNT attempts")
-                                updateNotification("❌ Booking failed, please retry")
-                            } else {
-                                logDebug("Retrying payment step ${retryCount + 1}/$MAX_RETRY_COUNT")
-                                delay(RETRY_DELAY_MS)
-                            }
-                        }
-                    }
-                    WorkflowStep.BOOKING_DONE -> { /* Ignore */ }
-                    WorkflowStep.FAILED -> {
-                        logDebug("⚠️ In failed state, waiting for manual intervention")
-                    }
-                }
-            } finally {
-                processingState.set(ProcessingState.IDLE)
-                screenLock.set(false)
-            }
+    // ✅ ULTRA PATCH: Safe Screen Lock Wrapper
+    private suspend inline fun withScreenLockSafe(block: suspend () -> Unit) {
+        if (!screenLock.compareAndSet(false, true)) return
+        try {
+            block()
+        } finally {
+            screenLock.set(false)
         }
     }
 
-    private fun startWorkerLoop() {
+    // ✅ ULTRA PATCH: Improved Worker Loop (No polling delay)
+    private fun startUltraWorker() {
+        // Main event processor - no delay using for loop
+        workerScope.launch {
+            for (event in eventChannel) {
+                try {
+                    if (event.type == "STATE" || event.type == "OTHER") {
+                        onEvent()
+                    }
+                } catch (e: Exception) {
+                    logError("Worker crash: ${e.message}")
+                }
+            }
+        }
+        
+        // Smart Watchdog with dynamic timeout
         workerScope.launch {
             while (isActive) {
-                val event = eventChannel.receiveCatching().getOrNull()
-                if (event != null) {
-                    try {
-                        onEvent()
-                    } catch (e: Exception) {
-                        logError("Worker error: ${e.message}")
-                    }
+                delay(WATCHDOG_INTERVAL_MS)
+                val step = currentStep.get()
+                val timeout = when (step) {
+                    WorkflowStep.REVIEW_READY, WorkflowStep.CAPTCHA_SOLVED -> 15000L
+                    WorkflowStep.PAYMENT_DONE -> 10000L
+                    else -> WATCHDOG_TIMEOUT_MS
                 }
-                yield()
-                delay(WORKER_DELAY_MS)
+                
+                if (System.currentTimeMillis() - lastProgressTime > timeout) {
+                    logError("⚠️ Smart Watchdog Reset (step: $step)")
+                    softReset()
+                }
             }
         }
     }
-
-    // ==================== HELPER FUNCTIONS ====================
-    internal fun setTextFast(node: AccessibilityNodeInfo, text: String) {
-        node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-        val args = Bundle().apply {
-            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-        }
-        if (!node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
-            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(ClipData.newPlainText("vmax_sniper", text))
-            val bounds = Rect()
-            node.getBoundsInScreen(bounds)
-            val path = Path().apply { moveTo(bounds.centerX().toFloat(), bounds.centerY().toFloat()) }
-            val duration = getGestureDuration()
-            val longPressGesture = GestureDescription.Builder()
-                .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
-                .build()
-            dispatchGesture(longPressGesture, null, null)
+    
+    private fun startWorkerLoop() {
+        startUltraWorker()
+    }
+    
+    private fun forceSendEvent(event: UiEvent) {
+        if (!eventChannel.trySend(event).isSuccess) {
+            logError("Queue Full → Flushing old event")
+            eventChannel.tryReceive().getOrNull()
+            eventChannel.trySend(event)
         }
     }
 
     private suspend fun softReset() {
+        logDebug("🔄 Soft Reset initiated")
         isArmed.set(false)
         formComplete.set(false)
         lastEventTime.set(0L)
-        currentStep = WorkflowStep.IDLE
+        currentStep.set(WorkflowStep.IDLE)
         processingState.set(ProcessingState.IDLE)
         screenLock.set(false)
         cachedScreenType = ""
         retryCount = 0
+        updateProgress()
         logDebug("🔄 Soft Reset Complete")
     }
 
@@ -665,35 +658,38 @@ class WorkflowEngine : AccessibilityService() {
                 workerScope.launch {
                     softReset()
                     isArmed.set(true)
+                    updateProgress()
                     
                     if (forceAttack) {
                         logDebug("🔥 FORCE ATTACK MODE - Starting immediately!")
                         mainScope.launch {
-                            if (currentStep == WorkflowStep.IDLE) {
+                            if (currentStep.get() == WorkflowStep.IDLE) {
                                 val currentScreen = getCurrentScreen()
                                 when (currentScreen) {
                                     "PASSENGER_FORM" -> {
-                                        currentStep = WorkflowStep.ATTACK_DONE
-                                        fillPassengerForm()
+                                        currentStep.set(WorkflowStep.ATTACK_DONE)
+                                        if (!isFormAlreadyFilled()) {
+                                            fillPassengerForm()
+                                        }
                                     }
                                     "REVIEW" -> {
-                                        currentStep = WorkflowStep.REVIEW_READY
+                                        currentStep.set(WorkflowStep.REVIEW_READY)
                                         if (waitForStableReviewScreen()) {
                                             if (solveCaptcha()) {
-                                                currentStep = WorkflowStep.CAPTCHA_SOLVED
+                                                currentStep.set(WorkflowStep.CAPTCHA_SOLVED)
                                             }
                                         }
                                     }
                                     "PAYMENT" -> {
-                                        currentStep = WorkflowStep.PAYMENT_DONE
+                                        currentStep.set(WorkflowStep.PAYMENT_DONE)
                                     }
                                     else -> {
-                                        withRoot { root ->
+                                        withFreshRoot { root ->
                                             val searchNode = safeFindById(root, IRCTC.SEARCH_BTN) ?:
                                                              safeFindByText(root, IRCTC.SEARCH_BTN_FALLBACK)
                                             searchNode?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                                         }
-                                        currentStep = WorkflowStep.REFRESH_DONE
+                                        currentStep.set(WorkflowStep.REFRESH_DONE)
                                     }
                                 }
                                 logDebug("⚡ FORCE ATTACK MODE ENGAGED!")
@@ -706,19 +702,26 @@ class WorkflowEngine : AccessibilityService() {
                         val targetSecond = parts.getOrNull(2)?.toIntOrNull() ?: 0
                         val advanceMs = task.msAdvance.toLong().coerceIn(120, 200)
                         
-                        TimeSyncManager.syncTime()
+                        val syncResult = withTimeoutOrNull(TIME_SYNC_TIMEOUT_MS) {
+                            TimeSyncManager.syncWithNetwork()
+                        }
+                        if (syncResult == null) {
+                            logError("⚠️ Time sync timeout - continuing anyway")
+                        }
+                        
                         logDebug("🎯 Target: $targetHour:$targetMinute:$targetSecond")
+                        logDebug("⏱ Current Time: ${TimeSyncManager.getPreciseTimeString()}")
                         
                         TimeSniper.scheduleFire(targetHour, targetMinute, targetSecond, advanceMs) {
                             isArmed.set(true)
                             mainScope.launch {
-                                if (currentStep == WorkflowStep.IDLE) {
-                                    withRoot { root ->
+                                if (currentStep.get() == WorkflowStep.IDLE) {
+                                    withFreshRoot { root ->
                                         val searchNode = safeFindById(root, IRCTC.SEARCH_BTN) ?:
                                                          safeFindByText(root, IRCTC.SEARCH_BTN_FALLBACK)
                                         searchNode?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                                     }
-                                    currentStep = WorkflowStep.REFRESH_DONE
+                                    currentStep.set(WorkflowStep.REFRESH_DONE)
                                     logDebug("🔥 ATTACK MODE ENGAGED!")
                                 }
                             }
@@ -756,8 +759,7 @@ class WorkflowEngine : AccessibilityService() {
         
         val eventType = when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> "STATE"
-            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> "CONTENT"
-            else -> "OTHER"
+            else -> "CONTENT"
         }
         
         val debounceMs = getDynamicDebounce()
@@ -767,54 +769,136 @@ class WorkflowEngine : AccessibilityService() {
         lastProcessedEventType = eventType
         lastProcessedEventTime = now
         
-        val result = eventChannel.trySend(UiEvent(eventType, now))
-        if (result.isFailure) {
-            logError("⚠️ EVENT DROPPED (queue full)")
+        forceSendEvent(UiEvent(eventType, now))
+    }
+
+    private suspend fun onEvent() {
+        try {
+            if (!isArmed.get()) return
+            
+            val currentScreen = getCurrentScreen()
+            val step = currentStep.get()
+            
+            // SMART RESUME: With safety check
+            if (step == WorkflowStep.IDLE || step == WorkflowStep.REFRESH_DONE) {
+                when (currentScreen) {
+                    "PASSENGER_FORM" -> {
+                        logDebug("🔄 Smart resume detected: Already on Passenger Form")
+                        currentStep.set(WorkflowStep.ATTACK_DONE)
+                        if (!isFormAlreadyFilled()) {
+                            fillPassengerForm()
+                        }
+                        return
+                    }
+                    "REVIEW" -> {
+                        logDebug("🔄 Smart resume detected: Already on Review Screen")
+                        currentStep.set(WorkflowStep.REVIEW_READY)
+                    }
+                    "PAYMENT" -> {
+                        logDebug("🔄 Smart resume detected: Already on Payment Screen")
+                        currentStep.set(WorkflowStep.PAYMENT_DONE)
+                    }
+                    else -> { /* do nothing */ }
+                }
+            }
+            
+            if (currentScreen == "REVIEW" && !screenLock.compareAndSet(false, true)) {
+                return
+            }
+            
+            if (!processingState.compareAndSet(ProcessingState.IDLE, ProcessingState.PROCESSING)) {
+                return
+            }
+            
+            try {
+                when (currentStep.get()) {
+                    WorkflowStep.IDLE -> {
+                        if (executeRefresh()) {
+                            currentStep.set(WorkflowStep.REFRESH_DONE)
+                            logDebug("➡️ REFRESH_DONE")
+                            retryCount = 0
+                            updateProgress()
+                        }
+                    }
+                    WorkflowStep.REFRESH_DONE -> {
+                        if (executeAttack()) {
+                            currentStep.set(WorkflowStep.ATTACK_DONE)
+                            logDebug("➡️ ATTACK_DONE")
+                            delay(Timing.UI_LOAD_MS)
+                            fillPassengerForm()
+                        }
+                    }
+                    WorkflowStep.ATTACK_DONE -> {
+                        if (formComplete.get()) {
+                            currentStep.set(WorkflowStep.REVIEW_READY)
+                            logDebug("➡️ REVIEW_READY")
+                            updateProgress()
+                        }
+                    }
+                    WorkflowStep.FORM_FILLING -> {
+                        delay(50)
+                    }
+                    WorkflowStep.FORM_FILLED -> {
+                        currentStep.set(WorkflowStep.REVIEW_READY)
+                        logDebug("➡️ FORM_FILLED → REVIEW_READY")
+                        updateProgress()
+                    }
+                    WorkflowStep.REVIEW_READY -> {
+                        if (waitForStableReviewScreen()) {
+                            if (solveCaptcha()) {
+                                currentStep.set(WorkflowStep.CAPTCHA_SOLVED)
+                                logDebug("➡️ CAPTCHA_SOLVED")
+                                updateProgress()
+                            }
+                        }
+                    }
+                    WorkflowStep.CAPTCHA_SOLVED -> {
+                        if (isCaptchaFilled()) {
+                            delay(Timing.NORMAL_MS)
+                            if (selectPayment()) {
+                                currentStep.set(WorkflowStep.PAYMENT_DONE)
+                                logDebug("➡️ PAYMENT_DONE")
+                                updateProgress()
+                            }
+                        }
+                    }
+                    WorkflowStep.PAYMENT_DONE -> {
+                        if (executeFinalPay()) {
+                            currentStep.set(WorkflowStep.BOOKING_DONE)
+                            logDebug("🎉 BOOKING SUCCESSFUL! 🎉")
+                            updateNotification("✅ BOOKING SUCCESSFUL! 🎉")
+                            isArmed.set(false)
+                            mainScope.launch {
+                                LocalBroadcastManager.getInstance(this@WorkflowEngine)
+                                    .sendBroadcast(Intent(ACTION_SERVICE_STOPPED))
+                            }
+                        } else {
+                            retryCount++
+                            if (retryCount >= 3) {
+                                currentStep.set(WorkflowStep.FAILED)
+                                logError("❌ BOOKING FAILED after 3 attempts")
+                                updateNotification("❌ Booking failed, please retry")
+                            } else {
+                                logDebug("Retrying payment step ${retryCount + 1}/3")
+                                delay(100L)
+                            }
+                        }
+                    }
+                    WorkflowStep.BOOKING_DONE -> { /* Ignore */ }
+                    WorkflowStep.FAILED -> {
+                        logDebug("⚠️ In failed state, waiting for manual intervention")
+                    }
+                }
+            } finally {
+                processingState.set(ProcessingState.IDLE)
+                screenLock.set(false)
+            }
+        } catch (e: Exception) {
+            logError("FATAL in onEvent", e)
+            softReset()
         }
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
-            val channel = NotificationChannel("vmax_channel", "VMAX Sniper", NotificationManager.IMPORTANCE_LOW)
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-        }
-    }
-
-    private fun buildNotification(message: String) = NotificationCompat.Builder(this, "vmax_channel")
-        .setContentTitle("🎯 VMAX ELITE SNIPER")
-        .setContentText(message)
-        .setSmallIcon(android.R.drawable.ic_dialog_info)
-        .setOngoing(true)
-        .build()
-
-    private fun updateNotification(message: String) {
-        try {
-            getSystemService(NotificationManager::class.java).notify(1, buildNotification(message))
-            logDebug(message)
-        } catch (e: Exception) {
-            logError("Notification error: ${e.message}")
-        }
-    }
-
-    override fun onInterrupt() { 
-        workerScope.launch { softReset() }
-        logDebug("⏸️ SERVICE INTERRUPTED")
-    }
-    
-    override fun onDestroy() { 
-        eventChannel.close()
-        workerScope.cancel()
-        mainScope.cancel()
-        super.onDestroy()
-        logDebug("💀 SERVICE DESTROYED")
-    }
-}
-
-fun isAccessibilityServiceEnabled(context: Context): Boolean {
-    val expected = ComponentName(context, WorkflowEngine::class.java)
-    val enabled = Settings.Secure.getString(
-        context.contentResolver,
-        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-    ) ?: return false
-    return enabled.contains(expected.flattenToString())
-}
+            val channel = NotificationChannel("vmax_channel", "VMAX Sniper", NotificationManager.
