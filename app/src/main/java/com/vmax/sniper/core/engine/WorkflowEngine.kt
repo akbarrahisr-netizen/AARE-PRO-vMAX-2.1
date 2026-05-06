@@ -103,7 +103,7 @@ class WorkflowEngine : AccessibilityService() {
     private val currentStep = AtomicReference(WorkflowStep.IDLE)
     private val processingState = AtomicReference(ProcessingState.IDLE)
     
-    // ✅ BONUS: Reentrancy guard
+    // Reentrancy guard
     @Volatile
     private var isProcessingEvent = false
     
@@ -135,7 +135,6 @@ class WorkflowEngine : AccessibilityService() {
     private val timestampFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
     private fun getCurrentTimestamp(): String = timestampFormat.format(Date())
 
-    // Production logging - always enabled for debugging
     private fun logDebug(message: String) = Log.d(TAG, "[${getCurrentTimestamp()}] $message")
     private fun logError(message: String) = Log.e(TAG, "[${getCurrentTimestamp()}] $message")
     private fun logError(message: String, e: Exception) = Log.e(TAG, "[${getCurrentTimestamp()}] $message", e)
@@ -225,8 +224,7 @@ class WorkflowEngine : AccessibilityService() {
         } catch (e: Exception) { null }
     }
     
-    // ✅ Fresh Root - No stale node issues
-    private suspend inline fun <T> withFreshRoot(block: (AccessibilityNodeInfo) -> T?): T? {
+    private suspend fun <T> withFreshRoot(block: (AccessibilityNodeInfo) -> T?): T? {
         delay(10)
         val root = rootInActiveWindow ?: return null
         return try { 
@@ -237,7 +235,6 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
     
-    // Legacy withRoot - kept for compatibility
     private suspend fun <T> withRoot(block: suspend (AccessibilityNodeInfo) -> T?): T? {
         return withFreshRoot(block)
     }
@@ -250,18 +247,15 @@ class WorkflowEngine : AccessibilityService() {
         return lastClickTime.compareAndSet(last, now)
     }
 
-    // ✅ Ultra Click - Multi-strategy
     private fun ultraClick(node: AccessibilityNodeInfo?): Boolean {
         if (node == null) return false
         if (!safeClickDelay()) return false
 
         return try {
-            // Strategy 1: Direct click
             if (node.isClickable) {
                 return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             }
             
-            // Strategy 2: Parent traversal
             var parent = node.parent
             while (parent != null) {
                 if (parent.isClickable) {
@@ -270,7 +264,6 @@ class WorkflowEngine : AccessibilityService() {
                 parent = parent.parent
             }
             
-            // Strategy 3: Gesture fallback
             val rect = Rect()
             node.getBoundsInScreen(rect)
             if (rect.width() > 0 && rect.height() > 0) {
@@ -291,15 +284,10 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
     
-    // ✅ INTERNAL for CaptchaSolver access
     internal suspend fun stableClick(node: AccessibilityNodeInfo?): Boolean = ultraClick(node)
-    
-    // Legacy click - kept for compatibility
     private fun click(node: AccessibilityNodeInfo?): Boolean = ultraClick(node)
 
-    // ✅ Ultra Text Input
     private suspend fun ultraSetText(node: AccessibilityNodeInfo, text: String) {
-        // Strategy 1: Direct set text
         repeat(2) {
             val args = Bundle().apply {
                 putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
@@ -308,7 +296,6 @@ class WorkflowEngine : AccessibilityService() {
             delay(5)
         }
         
-        // Strategy 2: Clipboard paste
         try {
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             clipboard.setPrimaryClip(ClipData.newPlainText("vmax_sniper", text))
@@ -318,15 +305,10 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
     
-    // ✅ INTERNAL for CaptchaSolver access
     internal suspend fun setTextFast(node: AccessibilityNodeInfo, text: String) = ultraSetText(node, text)
-    
-    // Legacy setTextFast - kept for compatibility
-    private suspend fun setTextFastInternal(node: AccessibilityNodeInfo, text: String) = ultraSetText(node, text)
 
     // ==================== WORKFLOW ACTIONS ====================
     
-    // ✅ Exponential Backoff Retry
     private suspend fun withUltraRetry(block: suspend () -> Boolean): Boolean {
         repeat(3) { attempt ->
             try {
@@ -334,7 +316,7 @@ class WorkflowEngine : AccessibilityService() {
             } catch (e: Exception) {
                 logError("Retry ${attempt + 1} failed: ${e.message}")
             }
-            delay(80L * (attempt + 1)) // 80, 160, 240ms
+            delay(80L * (attempt + 1))
         }
         return false
     }
@@ -564,7 +546,6 @@ class WorkflowEngine : AccessibilityService() {
         logDebug("💾 Form cache saved")
     }
 
-    // ✅ Safe Screen Lock Wrapper
     private suspend inline fun withScreenLockSafe(block: suspend () -> Unit) {
         if (!screenLock.compareAndSet(false, true)) return
         try {
@@ -574,9 +555,7 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // ✅ Improved Worker Loop (No polling delay)
     private fun startUltraWorker() {
-        // Main event processor - no delay using for loop
         workerScope.launch {
             for (event in eventChannel) {
                 try {
@@ -589,7 +568,6 @@ class WorkflowEngine : AccessibilityService() {
             }
         }
         
-        // Smart Watchdog with dynamic timeout
         workerScope.launch {
             while (isActive) {
                 delay(WATCHDOG_INTERVAL_MS)
@@ -634,7 +612,6 @@ class WorkflowEngine : AccessibilityService() {
         logDebug("🔄 Soft Reset Complete")
     }
 
-    // ✅ Build Notification (was missing)
     private fun buildNotification(message: String): NotificationCompat.Builder {
         return NotificationCompat.Builder(this, "vmax_channel")
             .setContentTitle("🎯 VMAX ELITE SNIPER")
@@ -644,7 +621,6 @@ class WorkflowEngine : AccessibilityService() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
     }
     
-    // ✅ INTERNAL notification for CaptchaSolver
     internal fun updateNotification(message: String) {
         try {
             val notification = buildNotification(message).build()
@@ -804,9 +780,7 @@ class WorkflowEngine : AccessibilityService() {
         forceSendEvent(UiEvent(eventType, now))
     }
 
-    // ✅ onEvent with reentrancy guard
     private suspend fun onEvent() {
-        // ✅ BONUS: Prevent reentrancy
         if (isProcessingEvent) return
         isProcessingEvent = true
         
@@ -816,7 +790,6 @@ class WorkflowEngine : AccessibilityService() {
             val currentScreen = getCurrentScreen()
             val step = currentStep.get()
             
-            // SMART RESUME: With safety check
             if (step == WorkflowStep.IDLE || step == WorkflowStep.REFRESH_DONE) {
                 when (currentScreen) {
                     "PASSENGER_FORM" -> {
@@ -835,7 +808,7 @@ class WorkflowEngine : AccessibilityService() {
                         logDebug("🔄 Smart resume detected: Already on Payment Screen")
                         currentStep.set(WorkflowStep.PAYMENT_DONE)
                     }
-                    else -> { /* do nothing */ }
+                    else -> { }
                 }
             }
             
@@ -901,4 +874,70 @@ class WorkflowEngine : AccessibilityService() {
                     }
                     WorkflowStep.PAYMENT_DONE -> {
                         if (executeFinalPay()) {
-                            currentStep.set(WorkflowStep.BO
+                            currentStep.set(WorkflowStep.BOOKING_DONE)
+                            logDebug("🎉 BOOKING SUCCESSFUL! 🎉")
+                            updateNotification("✅ BOOKING SUCCESSFUL! 🎉")
+                            isArmed.set(false)
+                            mainScope.launch {
+                                LocalBroadcastManager.getInstance(this@WorkflowEngine)
+                                    .sendBroadcast(Intent(ACTION_SERVICE_STOPPED))
+                            }
+                        } else {
+                            retryCount++
+                            if (retryCount >= MAX_RETRY_COUNT) {
+                                currentStep.set(WorkflowStep.FAILED)
+                                logError("❌ BOOKING FAILED after $MAX_RETRY_COUNT attempts")
+                                updateNotification("❌ Booking failed, please retry")
+                            } else {
+                                logDebug("Retrying payment step ${retryCount + 1}/$MAX_RETRY_COUNT")
+                                delay(RETRY_DELAY_MS)
+                            }
+                        }
+                    }
+                    WorkflowStep.BOOKING_DONE -> { }
+                    WorkflowStep.FAILED -> {
+                        logDebug("⚠️ In failed state, waiting for manual intervention")
+                    }
+                }
+            } finally {
+                processingState.set(ProcessingState.IDLE)
+                screenLock.set(false)
+            }
+        } finally {
+            isProcessingEvent = false
+        }
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= 26) {
+            val channel = NotificationChannel(
+                "vmax_channel",
+                "VMAX Sniper",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
+    }
+
+    override fun onInterrupt() {
+        workerScope.launch { softReset() }
+        logDebug("⏸️ SERVICE INTERRUPTED")
+    }
+
+    override fun onDestroy() {
+        eventChannel.close()
+        workerScope.cancel()
+        mainScope.cancel()
+        super.onDestroy()
+        logDebug("💀 SERVICE DESTROYED")
+    }
+}
+
+fun isAccessibilityServiceEnabled(context: Context): Boolean {
+    val expected = ComponentName(context, WorkflowEngine::class.java)
+    val enabled = Settings.Secure.getString(
+        context.contentResolver,
+        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+    ) ?: return false
+    return enabled.contains(expected.flattenToString())
+}
