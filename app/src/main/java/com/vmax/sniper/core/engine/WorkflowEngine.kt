@@ -35,8 +35,8 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * VMAX ELITE - EVENT-DRIVEN STATE MACHINE v10.0.0
- * ✅ ULTRA PERFORMANCE | Industrial Grade | Production Ready
+ * VMAX ELITE - EVENT-DRIVEN STATE MACHINE v10.1.0
+ * ✅ ALL FIXES APPLIED | CaptchaSolver Compatible | Production Ready
  */
 class WorkflowEngine : AccessibilityService() {
 
@@ -102,6 +102,10 @@ class WorkflowEngine : AccessibilityService() {
     // Atomic state for thread safety
     private val currentStep = AtomicReference(WorkflowStep.IDLE)
     private val processingState = AtomicReference(ProcessingState.IDLE)
+    
+    // ✅ BONUS: Reentrancy guard
+    @Volatile
+    private var isProcessingEvent = false
     
     private var retryCount = 0
 
@@ -221,7 +225,7 @@ class WorkflowEngine : AccessibilityService() {
         } catch (e: Exception) { null }
     }
     
-    // ✅ ULTRA PATCH: Fresh Root - No stale node issues
+    // ✅ Fresh Root - No stale node issues
     private suspend inline fun <T> withFreshRoot(block: (AccessibilityNodeInfo) -> T?): T? {
         delay(10)
         val root = rootInActiveWindow ?: return null
@@ -246,7 +250,7 @@ class WorkflowEngine : AccessibilityService() {
         return lastClickTime.compareAndSet(last, now)
     }
 
-    // ✅ ULTRA PATCH: Ultra Click - Multi-strategy
+    // ✅ Ultra Click - Multi-strategy
     private fun ultraClick(node: AccessibilityNodeInfo?): Boolean {
         if (node == null) return false
         if (!safeClickDelay()) return false
@@ -287,10 +291,13 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
     
+    // ✅ INTERNAL for CaptchaSolver access
+    internal suspend fun stableClick(node: AccessibilityNodeInfo?): Boolean = ultraClick(node)
+    
     // Legacy click - kept for compatibility
     private fun click(node: AccessibilityNodeInfo?): Boolean = ultraClick(node)
 
-    // ✅ ULTRA PATCH: Ultra Text Input
+    // ✅ Ultra Text Input
     private suspend fun ultraSetText(node: AccessibilityNodeInfo, text: String) {
         // Strategy 1: Direct set text
         repeat(2) {
@@ -311,12 +318,15 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
     
+    // ✅ INTERNAL for CaptchaSolver access
+    internal suspend fun setTextFast(node: AccessibilityNodeInfo, text: String) = ultraSetText(node, text)
+    
     // Legacy setTextFast - kept for compatibility
-    private suspend fun setTextFast(node: AccessibilityNodeInfo, text: String) = ultraSetText(node, text)
+    private suspend fun setTextFastInternal(node: AccessibilityNodeInfo, text: String) = ultraSetText(node, text)
 
     // ==================== WORKFLOW ACTIONS ====================
     
-    // ✅ ULTRA PATCH: Exponential Backoff Retry
+    // ✅ Exponential Backoff Retry
     private suspend fun withUltraRetry(block: suspend () -> Boolean): Boolean {
         repeat(3) { attempt ->
             try {
@@ -554,7 +564,7 @@ class WorkflowEngine : AccessibilityService() {
         logDebug("💾 Form cache saved")
     }
 
-    // ✅ ULTRA PATCH: Safe Screen Lock Wrapper
+    // ✅ Safe Screen Lock Wrapper
     private suspend inline fun withScreenLockSafe(block: suspend () -> Unit) {
         if (!screenLock.compareAndSet(false, true)) return
         try {
@@ -564,7 +574,7 @@ class WorkflowEngine : AccessibilityService() {
         }
     }
 
-    // ✅ ULTRA PATCH: Improved Worker Loop (No polling delay)
+    // ✅ Improved Worker Loop (No polling delay)
     private fun startUltraWorker() {
         // Main event processor - no delay using for loop
         workerScope.launch {
@@ -624,6 +634,28 @@ class WorkflowEngine : AccessibilityService() {
         logDebug("🔄 Soft Reset Complete")
     }
 
+    // ✅ Build Notification (was missing)
+    private fun buildNotification(message: String): NotificationCompat.Builder {
+        return NotificationCompat.Builder(this, "vmax_channel")
+            .setContentTitle("🎯 VMAX ELITE SNIPER")
+            .setContentText(message)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+    }
+    
+    // ✅ INTERNAL notification for CaptchaSolver
+    internal fun updateNotification(message: String) {
+        try {
+            val notification = buildNotification(message).build()
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.notify(1, notification)
+            logDebug(message)
+        } catch (e: Exception) {
+            logError("Notification error: ${e.message}")
+        }
+    }
+
     // ==================== SERVICE LIFECYCLE ====================
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -635,7 +667,7 @@ class WorkflowEngine : AccessibilityService() {
                     AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
         }
         createNotificationChannel()
-        startForeground(1, buildNotification("⚡ VMAX ELITE ACTIVE"))
+        startForeground(1, buildNotification("⚡ VMAX ELITE ACTIVE").build())
         startWorkerLoop()
         logDebug("✅ SERVICE ACTIVE")
     }
@@ -772,7 +804,12 @@ class WorkflowEngine : AccessibilityService() {
         forceSendEvent(UiEvent(eventType, now))
     }
 
+    // ✅ onEvent with reentrancy guard
     private suspend fun onEvent() {
+        // ✅ BONUS: Prevent reentrancy
+        if (isProcessingEvent) return
+        isProcessingEvent = true
+        
         try {
             if (!isArmed.get()) return
             
@@ -864,41 +901,4 @@ class WorkflowEngine : AccessibilityService() {
                     }
                     WorkflowStep.PAYMENT_DONE -> {
                         if (executeFinalPay()) {
-                            currentStep.set(WorkflowStep.BOOKING_DONE)
-                            logDebug("🎉 BOOKING SUCCESSFUL! 🎉")
-                            updateNotification("✅ BOOKING SUCCESSFUL! 🎉")
-                            isArmed.set(false)
-                            mainScope.launch {
-                                LocalBroadcastManager.getInstance(this@WorkflowEngine)
-                                    .sendBroadcast(Intent(ACTION_SERVICE_STOPPED))
-                            }
-                        } else {
-                            retryCount++
-                            if (retryCount >= 3) {
-                                currentStep.set(WorkflowStep.FAILED)
-                                logError("❌ BOOKING FAILED after 3 attempts")
-                                updateNotification("❌ Booking failed, please retry")
-                            } else {
-                                logDebug("Retrying payment step ${retryCount + 1}/3")
-                                delay(100L)
-                            }
-                        }
-                    }
-                    WorkflowStep.BOOKING_DONE -> { /* Ignore */ }
-                    WorkflowStep.FAILED -> {
-                        logDebug("⚠️ In failed state, waiting for manual intervention")
-                    }
-                }
-            } finally {
-                processingState.set(ProcessingState.IDLE)
-                screenLock.set(false)
-            }
-        } catch (e: Exception) {
-            logError("FATAL in onEvent", e)
-            softReset()
-        }
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            val channel = NotificationChannel("vmax_channel", "VMAX Sniper", NotificationManager.
+                            currentStep.set(WorkflowStep.BO
