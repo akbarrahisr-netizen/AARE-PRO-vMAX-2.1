@@ -34,7 +34,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * VMAX ELITE - EVENT-DRIVEN STATE MACHINE v7.3.2
+ * VMAX ELITE - EVENT-DRIVEN STATE MACHINE v7.3.3
  * ✅ Compilation Fixed | Smart Resume | Force Attack
  */
 class WorkflowEngine : AccessibilityService() {
@@ -492,7 +492,7 @@ class WorkflowEngine : AccessibilityService() {
                         logDebug("🔄 Smart resume detected: Already on Payment Screen")
                         currentStep = WorkflowStep.PAYMENT_DONE
                     }
-                    else -> { /* do nothing */ }  // ✅ FIX 1: Added else branch
+                    else -> { /* do nothing */ }
                 }
             }
             
@@ -595,6 +595,7 @@ class WorkflowEngine : AccessibilityService() {
     }
 
     // ==================== HELPER FUNCTIONS ====================
+    // ✅ FIXED: Removed GestureResultCallback completely to avoid compilation error
     internal fun setTextFast(node: AccessibilityNodeInfo, text: String) {
         node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
         val args = Bundle().apply {
@@ -610,15 +611,8 @@ class WorkflowEngine : AccessibilityService() {
             val longPressGesture = GestureDescription.Builder()
                 .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
                 .build()
-            // ✅ FIX 2: Correct GestureResultCallback with fully qualified class
-            dispatchGesture(longPressGesture, object : android.accessibilityservice.GestureDescription.GestureResultCallback() {
-                override fun onCompleted(gestureDescription: GestureDescription?) {
-                    logDebug("Gesture completed successfully")
-                }
-                override fun onCancelled(gestureDescription: GestureDescription?) {
-                    logError("Gesture was cancelled")
-                }
-            }, null)
+            // ✅ FIX: Using null callback to avoid GestureResultCallback issues
+            dispatchGesture(longPressGesture, null, null)
         }
     }
 
