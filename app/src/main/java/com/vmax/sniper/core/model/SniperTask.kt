@@ -4,6 +4,7 @@ import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
 import java.util.UUID
 
+// ==================== SNIPER TASK ====================
 @Parcelize
 data class SniperTask(
     val taskId: String = UUID.randomUUID().toString(),
@@ -37,6 +38,7 @@ data class SniperTask(
                 passengers.all { it.isValid() }
 }
 
+// ==================== ENUMS ====================
 enum class TravelClass { 
     AC_FIRST, AC_2TIER, AC_3TIER, SLEEPER 
 }
@@ -49,6 +51,11 @@ enum class BookingOption {
     NONE, SAME_COACH, ONE_LOWER_BERTH, TWO_LOWER_BERTHS 
 }
 
+enum class PaymentCategory { 
+    BHIM_UPI, UPI_ID, CARDS 
+}
+
+// ==================== PAYMENT DETAILS ====================
 @Parcelize
 data class PaymentDetails(
     val category: PaymentCategory = PaymentCategory.BHIM_UPI,
@@ -56,7 +63,3 @@ data class PaymentDetails(
     val manualPayment: Boolean = false,
     val autofillOTP: Boolean = true
 ) : Parcelable
-
-enum class PaymentCategory { 
-    BHIM_UPI, UPI_ID, CARDS 
-}
