@@ -317,7 +317,6 @@ class WorkflowEngine : AccessibilityService() {
             withRoot { root -> safeFindById(root, IRCTC.AGE_INPUT)?.let { setTextFast(it, passenger.age.toString()) } }
             delay(Timing.FAST_MS)
             
-            // gender is String in PassengerData (e.g., "Male", "Female")
             if (passenger.gender.isNotBlank()) {
                 withRoot { root -> safeFindById(root, IRCTC.GENDER_SPINNER)?.let { click(it) } }
                 delay(Timing.FAST_MS)
@@ -493,7 +492,7 @@ class WorkflowEngine : AccessibilityService() {
                         logDebug("🔄 Smart resume detected: Already on Payment Screen")
                         currentStep = WorkflowStep.PAYMENT_DONE
                     }
-                    else -> { /* do nothing */ }
+                    else -> { /* do nothing */ }  // ✅ FIX 1: Added else branch
                 }
             }
             
@@ -611,8 +610,8 @@ class WorkflowEngine : AccessibilityService() {
             val longPressGesture = GestureDescription.Builder()
                 .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
                 .build()
-            // ✅ Correct GestureResultCallback (Android SDK class)
-            dispatchGesture(longPressGesture, object : GestureDescription.GestureResultCallback() {
+            // ✅ FIX 2: Correct GestureResultCallback with fully qualified class
+            dispatchGesture(longPressGesture, object : android.accessibilityservice.GestureDescription.GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription?) {
                     logDebug("Gesture completed successfully")
                 }
@@ -651,7 +650,6 @@ class WorkflowEngine : AccessibilityService() {
         logDebug("✅ SERVICE ACTIVE")
     }
 
-    // ✅ UPDATED onStartCommand with FORCE_ATTACK support
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_START_SNIPER) {
             val task = if (Build.VERSION.SDK_INT >= 33) {
@@ -672,7 +670,6 @@ class WorkflowEngine : AccessibilityService() {
                     isArmed.set(true)
                     
                     if (forceAttack) {
-                        // IMMEDIATE ATTACK - No timer wait
                         logDebug("🔥 FORCE ATTACK MODE - Starting immediately!")
                         mainScope.launch {
                             if (currentStep == WorkflowStep.IDLE) {
@@ -706,7 +703,6 @@ class WorkflowEngine : AccessibilityService() {
                             }
                         }
                     } else {
-                        // Normal scheduled attack
                         val parts = task.triggerTime.split(":")
                         val targetHour = parts.getOrNull(0)?.toIntOrNull() ?: 10
                         val targetMinute = parts.getOrNull(1)?.toIntOrNull() ?: 0
